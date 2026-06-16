@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.caddy
+      network: host
     container_name: caddyui-caddy
     restart: unless-stopped
     ports:
@@ -28,7 +29,9 @@ services:
       - caddyui
 
   caddy-ui:
-    build: ./app
+    build:
+      context: ./app
+      network: host
     container_name: caddyui-dashboard
     restart: unless-stopped
     ports:

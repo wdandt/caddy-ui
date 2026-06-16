@@ -60,6 +60,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const redirectUrl = urlParams.get('redirect') || '/';
         const errorParam = urlParams.get('error');
+        const recoveryParam = urlParams.get('recovery') === 'true';
 
         const errorAlert = document.getElementById('error-alert');
         const infoAlert = document.getElementById('info-alert');
@@ -74,18 +75,85 @@
             infoAlert.classList.remove('hidden');
         }
 
+        if (recoveryParam) {
+            infoAlert.textContent = 'Admin Recovery Mode: Credentials login enabled for admin user.';
+            infoAlert.classList.remove('hidden');
+        }
+
         // Fetch auth configuration
         fetch('/auth/config')
             .then(res => res.json())
             .then(data => {
-                if (data.ssoEnabled) {
+                const isSsoOnly = data.ssoOnly || false;
+                const allowedProviders = data.providers || [];
+                
+                // If SSO Only is enabled, and not in recovery mode, and exactly 1 provider is allowed -> auto redirect
+                if (isSsoOnly && !recoveryParam && allowedProviders.length === 1) {
+                    window.location.href = `/auth/sso?providerId=${allowedProviders[0].id}&redirect=${encodeURIComponent(redirectUrl)}`;
+                    return;
+                }
+
+                if (data.ssoEnabled && allowedProviders.length > 0) {
                     const ssoContainer = document.getElementById('sso-container');
+                    ssoContainer.replaceChildren(); // Clear
                     ssoContainer.classList.remove('hidden');
-                    
-                    const ssoBtn = document.getElementById('sso-btn');
-                    ssoBtn.addEventListener('click', () => {
-                        window.location.href = `/auth/sso?redirect=${encodeURIComponent(redirectUrl)}`;
+
+                    allowedProviders.forEach(prov => {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-primary btn-block';
+                        btn.style.marginBottom = '0.75rem';
+                        
+                        const iconSpan = document.createElement('span');
+                        iconSpan.className = 'icon';
+                        iconSpan.style.marginRight = '0.5rem';
+                        iconSpan.textContent = '🔑';
+                        
+                        btn.appendChild(iconSpan);
+                        btn.appendChild(document.createTextNode(`Login with ${prov.name}`));
+                        
+                        btn.addEventListener('click', () => {
+                            window.location.href = `/auth/sso?providerId=${prov.id}&redirect=${encodeURIComponent(redirectUrl)}`;
+                        });
+                        
+                        ssoContainer.appendChild(btn);
                     });
+                }
+
+                // If SSO only is enabled and not in recovery mode, hide credentials form
+                if (isSsoOnly && !recoveryParam) {
+                    const loginForm = document.getElementById('login-form');
+                    loginForm.classList.add('hidden');
+                    
+                    // Add recovery mode link
+                    const recoveryContainer = document.createElement('div');
+                    recoveryContainer.style.textAlign = 'center';
+                    recoveryContainer.style.marginTop = '1.5rem';
+                    
+                    const recoveryLink = document.createElement('a');
+                    recoveryLink.href = `?recovery=true&redirect=${encodeURIComponent(redirectUrl)}`;
+                    recoveryLink.style.color = 'var(--text-muted)';
+                    recoveryLink.style.fontSize = '0.85rem';
+                    recoveryLink.style.textDecoration = 'none';
+                    recoveryLink.textContent = 'Admin Recovery Login';
+                    recoveryLink.addEventListener('mouseover', () => recoveryLink.style.textDecoration = 'underline');
+                    recoveryLink.addEventListener('mouseout', () => recoveryLink.style.textDecoration = 'none');
+                    
+                    recoveryContainer.appendChild(recoveryLink);
+                    document.querySelector('.login-card').appendChild(recoveryContainer);
+
+                    if (allowedProviders.length === 0) {
+                        errorAlert.textContent = 'SSO Login is required, but no SSO providers are enabled or allowed.';
+                        errorAlert.classList.remove('hidden');
+                    }
+                } else if (data.ssoEnabled && allowedProviders.length > 0 && (!isSsoOnly || recoveryParam)) {
+                    // Show divider if both SSO buttons and credentials form are visible
+                    const ssoContainer = document.getElementById('sso-container');
+                    const divider = document.createElement('div');
+                    divider.className = 'divider';
+                    const spanEl = document.createElement('span');
+                    spanEl.textContent = 'or use credentials';
+                    divider.appendChild(spanEl);
+                    ssoContainer.appendChild(divider);
                 }
             })
             .catch(err => console.error('Failed to load auth config:', err));
@@ -108,7 +176,11 @@
 
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    window.location.href = redirectUrl;
+                    if (data.redirect) {
+                        window.location.href = data.redirect + `?redirect=${encodeURIComponent(redirectUrl)}`;
+                    } else {
+                        window.location.href = redirectUrl;
+                    }
                 } else {
                     errorAlert.textContent = data.error || 'Authentication failed';
                     errorAlert.classList.remove('hidden');

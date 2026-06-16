@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Factor Authentication - Caddy UI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="background-decor">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="login-card glass">
+        <div class="login-header">
+            <div class="logo-icon">🛡️</div>
+            <h1>Two-Factor Verification</h1>
+            <p>Enter the 6-digit code from your authenticator app.</p>
+        </div>
+
+        <div id="error-alert" class="alert alert-danger hidden"></div>
+
+        <form id="verify-form">
+            <div class="form-group">
+                <label for="code" style="text-align: center; display: block; font-size: 0.95rem; margin-bottom: 0.75rem;">Verification Code</label>
+                <input type="text" id="code" name="code" required placeholder="e.g. 123456" pattern="[0-9]{6}" maxlength="6" style="font-size: 1.5rem; letter-spacing: 0.5rem; text-align: center; font-family: monospace;" autocomplete="one-time-code">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Verify</button>
+        </form>
+        
+        <div style="margin-top: 1.5rem; text-align: center;">
+            <a href="/login" class="btn btn-secondary btn-block" style="font-size: 0.9rem; padding: 0.5rem;">Back to Sign In</a>
+        </div>
+    </div>
+
+    <script>
+        const verifyForm = document.getElementById('verify-form');
+        const errorAlert = document.getElementById('error-alert');
+        
+        // Parse redirect param
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectUrl = urlParams.get('redirect') || '/';
+
+        verifyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorAlert.classList.add('hidden');
+
+            const code = document.getElementById('code').value.trim();
+            if (code.length !== 6) {
+                errorAlert.textContent = 'Please enter a 6-digit code';
+                errorAlert.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const res = await fetch('/auth/verify-2fa', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.location.href = redirectUrl;
+                } else {
+                    errorAlert.textContent = data.error || 'Verification failed';
+                    errorAlert.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorAlert.textContent = 'Connection error';
+                errorAlert.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

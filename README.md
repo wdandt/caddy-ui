@@ -9,6 +9,7 @@ A lightweight, modern Web UI Dashboard and Single Sign-On (SSO) Forward Auth Pro
 *   **🖥️ Multi-Instance Caddy Management**: Connect, monitor, and synchronize configurations with local and remote Caddy servers via the Caddy Admin API.
 *   **🔗 Dynamic Proxy Routing**: Create, edit, and delete reverse proxy routes in real-time. Configuration changes are synced instantly to Caddy servers.
 *   **🔐 SSO & Forward Auth (OIDC)**: Integrate with popular Identity Providers (Google, GitHub, Keycloak, Authentik, Okta) using OpenID Connect.
+*   **⚙️ UI Configurable Credentials**: Change the admin username and password directly from the Settings tab, stored securely using `bcryptjs` hashing.
 *   **🛡️ Route Protection**: Toggle SSO protection on any proxy route to restrict access to authenticated users via Caddy's `forward_auth` middleware.
 *   **✨ Modern Glassmorphic Dashboard**: A premium, responsive interface featuring live status indicators, server latency checks, and visual route overviews.
 *   **🔒 Security Hardened**: Built with CSRF protection (double submit cookie) and secure HTTP-Only session cookies (`__Host-` prefixed for production).
@@ -32,6 +33,8 @@ A lightweight, modern Web UI Dashboard and Single Sign-On (SSO) Forward Auth Pro
 │   └── server.js            # Express API server & Forward Auth Gatekeeper
 ├── Dockerfile.caddy         # Custom Caddy image builder with Cloudflare DNS
 ├── docker-compose.yml       # Orchestration stack for Caddy, Dashboard & Cloudflare Tunnel
+├── .env.example             # Template environment variables file
+├── .env                     # Local environment settings (ignored by git)
 ├── .gitignore               # Ignored files for version control
 └── .dockerignore            # Minimized Docker context rules
 ```
@@ -46,23 +49,30 @@ A lightweight, modern Web UI Dashboard and Single Sign-On (SSO) Forward Auth Pro
 
 ### 🔧 Configuration
 
-Before launching, review and configure the environment variables in `docker-compose.yml`:
+Before launching, copy the `.env.example` template to `.env` and configure your environment variables:
 
-```yaml
-# docker-compose.yml
-services:
-  caddy-ui:
-    environment:
-      - PORT=3000
-      - NODE_ENV=production
-      - ADMIN_USER=admin                         # Fallback admin username
-      - ADMIN_PASS=caddyui_admin_secure_pass_123 # Fallback admin password
-      - JWT_SECRET=                              # Leave blank to auto-generate
+```bash
+cp .env.example .env
 ```
 
-*   **Cloudflare Integration (Optional)**: If you use Cloudflare Tunnels or DNS validation for Caddy certificates, define:
-    *   `CLOUDFLARE_API_TOKEN`
-    *   `CLOUDFLARE_TUNNEL_TOKEN`
+Review and update the variables in `.env`:
+
+```ini
+# Fallback Admin Credentials (used to initialize the database)
+ADMIN_USER=admin
+ADMIN_PASS=caddyui_admin_secure_pass_123
+
+# JWT Secret Key (for session encryption)
+# Leave empty to auto-generate a secure random one on startup
+JWT_SECRET=
+
+# Cloudflare Integration (Optional)
+CLOUDFLARE_API_TOKEN=your_cloudflare_api_token_here
+CLOUDFLARE_TUNNEL_TOKEN=your_cloudflared_tunnel_token_here
+```
+
+> [!NOTE]
+> Admin Credentials (`ADMIN_USER` and `ADMIN_PASS`) are used to initialize the database on the very first run. Once the database is initialized, you can modify the admin credentials directly on the **Settings** page in the UI, and the `.env` settings will no longer override the database values.
 
 ### 🏃 Running the Stack
 

@@ -24,6 +24,8 @@
             <ul class="nav-links">
                 <li><a id="nav-proxies" class="nav-item active"><span class="icon">🔗</span> Proxy Routes</a></li>
                 <li><a id="nav-servers" class="nav-item"><span class="icon">🖥️</span> Caddy Servers</a></li>
+                <li><a id="nav-users" class="nav-item"><span class="icon">👥</span> Users</a></li>
+                <li><a id="nav-providers" class="nav-item"><span class="icon">🔑</span> Identity Providers</a></li>
                 <li><a id="nav-sso" class="nav-item"><span class="icon">⚙️</span> Settings</a></li>
             </ul>
 
@@ -64,7 +66,12 @@
             <section id="panel-proxies" class="content-section">
                 <div class="section-header">
                     <h3>Configured Proxy Routes</h3>
-                    <button id="add-proxy-btn" class="btn btn-primary">+ Add Proxy Route</button>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="file" id="import-proxies-file" accept=".json" style="display: none;">
+                        <button id="import-proxies-btn" class="btn btn-secondary" style="padding: 0.5rem 0.8rem; font-size: 0.85rem;"><span class="icon">📥</span> Import JSON</button>
+                        <button id="export-proxies-btn" class="btn btn-secondary" style="padding: 0.5rem 0.8rem; font-size: 0.85rem;"><span class="icon">📤</span> Export JSON</button>
+                        <button id="add-proxy-btn" class="btn btn-primary">+ Add Proxy Route</button>
+                    </div>
                 </div>
                 <div class="proxy-list" id="proxy-list-container">
                     <!-- Dynamic rendering -->
@@ -84,75 +91,67 @@
 
             <!-- PANEL: SSO SETTINGS -->
             <section id="panel-sso" class="content-section hidden">
-                <div class="settings-grid">
-                    <div style="display: flex; flex-direction: column; gap: 2rem;">
-                        <!-- Admin Credentials Settings -->
-                        <div class="glass" style="padding: 2rem; border-radius: var(--radius-md);">
-                            <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Admin Credentials</h3>
-                            <form id="admin-credentials-form">
-                                <div class="form-group">
-                                    <label for="admin-username">Admin Username</label>
-                                    <input type="text" id="admin-username" required placeholder="e.g. admin">
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="admin-password">New Password</label>
-                                    <input type="password" id="admin-password" placeholder="•••••••••••• (Leave empty to keep current)">
-                                </div>
+                <div style="max-width: 600px;">
+                    <!-- Admin Credentials Settings -->
+                    <div class="glass" style="padding: 2rem; border-radius: var(--radius-md); margin-bottom: 2rem;">
+                        <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Account Credentials</h3>
+                        <form id="admin-credentials-form">
+                            <div class="form-group">
+                                <label for="admin-username">Username</label>
+                                <input type="text" id="admin-username" required placeholder="e.g. admin" readonly>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="admin-password">New Password</label>
+                                <input type="password" id="admin-password" placeholder="•••••••••••• (Leave empty to keep current)">
+                            </div>
 
-                                <button type="submit" class="btn btn-primary">Save Admin Credentials</button>
-                            </form>
-                        </div>
-
-                        <!-- SSO OIDC Settings -->
-                        <div class="glass" style="padding: 2rem; border-radius: var(--radius-md);">
-                            <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">OIDC Single Sign-On</h3>
-                            <form id="sso-config-form">
-                                <div class="switch-container">
-                                    <label class="switch">
-                                        <input type="checkbox" id="sso-enabled-toggle">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <span style="font-weight: 600;">Enable SSO Authentication</span>
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="sso-issuer">OIDC Issuer URL</label>
-                                    <input type="url" id="sso-issuer" required placeholder="https://accounts.google.com or https://authentik.company.com">
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="sso-client-id">Client ID</label>
-                                    <input type="text" id="sso-client-id" required placeholder="Enter OAuth Client ID">
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="sso-client-secret">Client Secret</label>
-                                    <input type="password" id="sso-client-secret" placeholder="•••••••••••••••••••• (Leave empty to keep current)">
-                                </div>
-                                
-                                <div class="form-group">
-                                    <label for="sso-redirect-uri">OAuth Redirect URI</label>
-                                    <input type="url" id="sso-redirect-uri" required placeholder="https://caddyui.yourdomain.com/auth/callback">
-                                </div>
-
-                                <button type="submit" class="btn btn-primary">Save SSO Config</button>
-                            </form>
-                        </div>
+                            <button type="submit" class="btn btn-primary">Save Credentials</button>
+                        </form>
                     </div>
 
-                    <div style="display: flex; flex-direction: column; gap: 2rem;">
-                        <div class="glass" style="padding: 1.5rem; border-radius: var(--radius-md); font-size: 0.9rem; color: var(--text-secondary);">
-                            <h4 style="color: var(--text-primary); margin-bottom: 0.75rem;">SSO Configuration Guide</h4>
-                            <p style="margin-bottom: 0.75rem;">Use OIDC/OAuth2 to protect access to this dashboard and any proxies running behind Caddy.</p>
-                            <ul style="margin-left: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                                <li>Register an application in your Identity Provider (Google, GitHub, Keycloak, Authentik).</li>
-                                <li>Set the <strong>Redirect URI</strong> to the exact endpoint on your dashboard domain.</li>
-                                <li>Enter the Issuer URL, Client ID, and Client Secret.</li>
-                                <li>Toggle SSO on and save the configuration.</li>
-                            </ul>
-                        </div>
+                    <!-- Dashboard Authentication Settings -->
+                    <div class="glass" style="padding: 2rem; border-radius: var(--radius-md);">
+                        <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Dashboard Authentication</h3>
+                        <form id="dashboard-auth-form">
+                            <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem;">
+                                <input type="checkbox" id="dash-sso-only" style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;">
+                                <label for="dash-sso-only" style="margin: 0; font-size: 0.95rem; font-weight: 500; cursor: pointer; user-select: none;">
+                                    Restrict Login to SSO Only (Disable credentials login for normal users)
+                                </label>
+                            </div>
+                            <div class="form-group" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
+                                <label style="font-weight: 600; margin-bottom: 0.5rem; display: block;">Allowed SSO Providers for Dashboard Login</label>
+                                <div id="dash-allowed-providers-list" style="display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; background: rgba(10, 14, 25, 0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); max-height: 200px; overflow-y: auto;">
+                                    <!-- Dynamic checkboxes -->
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Auth Settings</button>
+                        </form>
                     </div>
+                </div>
+            </section>
+
+            <!-- PANEL: USERS -->
+            <section id="panel-users" class="content-section hidden">
+                <div class="section-header">
+                    <h3>User Accounts</h3>
+                    <button id="add-user-btn" class="btn btn-primary">+ Add User</button>
+                </div>
+                <div class="list-group" id="user-list-container">
+                    <!-- Dynamic user rendering -->
+                </div>
+            </section>
+
+            <!-- PANEL: IDENTITY PROVIDERS -->
+            <section id="panel-providers" class="content-section hidden">
+                <div class="section-header">
+                    <h3>SSO Providers</h3>
+                    <button id="add-provider-btn" class="btn btn-primary">+ Add SSO Provider</button>
+                </div>
+                <div class="list-group" id="provider-list-container">
+                    <!-- Dynamic OIDC provider rendering -->
                 </div>
             </section>
         </main>
@@ -169,28 +168,64 @@
                 <input type="hidden" id="proxy-id">
                 
                 <div class="form-group">
-                    <label for="proxy-server-select">Caddy Server</label>
-                    <select id="proxy-server-select" required>
-                        <!-- Dynamic options -->
+                    <label for="proxy-config-type">Configuration Mode</label>
+                    <select id="proxy-config-type" required>
+                        <option value="form">UI Form Builder</option>
+                        <option value="json">Raw JSON Config</option>
                     </select>
                 </div>
 
-                <div class="form-group">
-                    <label for="proxy-host">Domain Hostname (Public)</label>
-                    <input type="text" id="proxy-host" required placeholder="e.g. app.domain.com">
+                <!-- Form Builder Fields -->
+                <div id="proxy-form-builder-fields">
+                    <div class="form-group">
+                        <label for="proxy-server-select">Caddy Server</label>
+                        <select id="proxy-server-select">
+                            <!-- Dynamic options -->
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="proxy-host">Domain Hostname (Public)</label>
+                        <input type="text" id="proxy-host" placeholder="e.g. app.domain.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="proxy-target">Destination Target (Internal)</label>
+                        <input type="text" id="proxy-target" placeholder="e.g. http://10.0.0.5:80 or http://app-container:3000">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="proxy-auth-mode">Protection / Authentication Mode</label>
+                        <select id="proxy-auth-mode">
+                            <option value="none">Public (None)</option>
+                            <option value="sso">SSO (Forward Auth)</option>
+                            <option value="basic">HTTP Basic Auth</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group hidden" id="proxy-sso-group">
+                        <label for="proxy-sso-provider">SSO Provider</label>
+                        <select id="proxy-sso-provider">
+                            <!-- Dynamic options -->
+                        </select>
+                    </div>
+
+                    <div class="form-group hidden" id="proxy-basic-group">
+                        <label for="proxy-basic-credentials">Basic Auth Credentials (one per line, format: `username:password`)</label>
+                        <textarea id="proxy-basic-credentials" placeholder="e.g.&#10;user1:my_secure_pass_123&#10;user2:another_pass_456" rows="4" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-family: monospace;"></textarea>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="proxy-target">Destination Target (Internal)</label>
-                    <input type="text" id="proxy-target" required placeholder="e.g. http://10.0.0.5:80 or http://app-container:3000">
-                </div>
-
-                <div class="switch-container">
-                    <label class="switch">
-                        <input type="checkbox" id="proxy-sso-enabled">
-                        <span class="slider"></span>
-                    </label>
-                    <span style="font-weight: 500;">Protect with SSO Login (Forward Auth)</span>
+                <!-- Raw JSON Fields -->
+                <div id="proxy-raw-json-fields" class="hidden">
+                    <div class="form-group">
+                        <label for="proxy-json-file">Upload JSON Config File</label>
+                        <input type="file" id="proxy-json-file" accept=".json">
+                    </div>
+                    <div class="form-group">
+                        <label for="proxy-json-text">Raw JSON Configuration String</label>
+                        <textarea id="proxy-json-text" placeholder='{&#10;  "instanceId": "local",&#10;  "host": "app.domain.com",&#10;  "target": "http://127.0.0.1:8080",&#10;  "authMode": "none"&#10;}' rows="10" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #34d399; font-family: monospace; font-size: 0.85rem; line-height: 1.4;"></textarea>
+                    </div>
                 </div>
 
                 <div class="modal-footer">
@@ -247,6 +282,140 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="close-config-modal-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD/EDIT USER -->
+    <div id="user-modal" class="modal-overlay">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h3 id="user-modal-title">Add User</h3>
+                <button class="close-btn" id="close-user-modal">&times;</button>
+            </div>
+            <form id="user-form">
+                <input type="hidden" id="user-id">
+                
+                <div class="form-group">
+                    <label for="user-username">Username (Email)</label>
+                    <input type="email" id="user-username" required placeholder="user@domain.com">
+                </div>
+
+                <div class="form-group" id="user-password-group">
+                    <label for="user-password">Password</label>
+                    <input type="password" id="user-password" placeholder="Enter password (required if local auth)">
+                </div>
+
+                <div class="form-group">
+                    <label for="user-role">Role</label>
+                    <select id="user-role" required>
+                        <option value="admin">Admin</option>
+                        <option value="viewer">Viewer (Read-only)</option>
+                    </select>
+                </div>
+
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="user-sso-enabled">
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-weight: 500;">Restrict login to SSO only</span>
+                </div>
+
+                <div class="form-group hidden" id="user-sso-provider-group">
+                    <label for="user-sso-provider">SSO Provider</label>
+                    <select id="user-sso-provider">
+                        <option value="">Any enabled Provider</option>
+                        <!-- Dynamic OIDC provider options -->
+                    </select>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="cancel-user-modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD/EDIT SSO PROVIDER -->
+    <div id="provider-modal" class="modal-overlay">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h3 id="provider-modal-title">Add SSO Provider</h3>
+                <button class="close-btn" id="close-provider-modal">&times;</button>
+            </div>
+            <form id="provider-form">
+                <input type="hidden" id="provider-id">
+                
+                <div class="form-group">
+                    <label for="provider-name">Provider Name</label>
+                    <input type="text" id="provider-name" required placeholder="e.g. Google SSO, Authentik">
+                </div>
+
+                <div class="form-group">
+                    <label for="provider-issuer">OIDC Issuer URL</label>
+                    <input type="url" id="provider-issuer" required placeholder="https://accounts.google.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="provider-client-id">Client ID</label>
+                    <input type="text" id="provider-client-id" required placeholder="Enter Client ID">
+                </div>
+
+                <div class="form-group">
+                    <label for="provider-client-secret">Client Secret</label>
+                    <input type="password" id="provider-client-secret" placeholder="Enter Client Secret">
+                </div>
+
+                <div class="form-group">
+                    <label for="provider-redirect-uri">OAuth Redirect URI</label>
+                    <input type="url" id="provider-redirect-uri" required placeholder="https://yourdomain.com/auth/callback">
+                </div>
+
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="provider-enabled" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-weight: 500;">Enable Provider</span>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="cancel-provider-modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Provider</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: MFA SETUP (QR CODE) -->
+    <div id="mfa-modal" class="modal-overlay">
+        <div class="modal-content glass" style="max-width: 440px; text-align: center;">
+            <div class="modal-header">
+                <h3>Set Up Two-Factor Authentication</h3>
+                <button class="close-btn" id="close-mfa-modal">&times;</button>
+            </div>
+            <div style="margin: 1.5rem 0; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+                <p style="font-size: 0.9rem; color: var(--text-secondary);">
+                    Scan the QR code below or enter the secret key manually in your authenticator app.
+                </p>
+                <div id="mfa-qr-container" style="background: white; padding: 1rem; border-radius: var(--radius-sm); display: inline-block;">
+                    <img id="mfa-qr-img" src="" alt="QR Code" style="display: block; width: 180px; height: 180px;">
+                </div>
+                <div style="font-family: monospace; font-size: 1.1rem; letter-spacing: 0.05em; background: rgba(0,0,0,0.3); padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); color: var(--accent-primary);" id="mfa-secret-key">
+                    Loading...
+                </div>
+                <form id="mfa-verify-form" style="width: 100%; margin-top: 1rem;">
+                    <div class="form-group">
+                        <label for="mfa-verify-code">Verify Code</label>
+                        <input type="text" id="mfa-verify-code" required placeholder="Enter 6-digit verification code" pattern="[0-9]{6}" maxlength="6" style="text-align: center; letter-spacing: 0.2rem; font-family: monospace;">
+                    </div>
+                    <div class="modal-footer" style="margin-top: 1rem; justify-content: center;">
+                        <button type="button" class="btn btn-secondary" id="cancel-mfa-modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Enable 2FA</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

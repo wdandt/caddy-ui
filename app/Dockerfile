@@ -1,10 +1,10 @@
-FROM node:18-alpine
+FROM oven/bun:alpine
 
 WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install --only=production
+RUN bun install --production
 
 COPY . .
 
@@ -13,4 +13,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV NODE_ENV=production
 
-CMD ["npm", "start"]
+CMD ["bun", "run", "server.js"]

@@ -1,20 +1,13 @@
-const express = require('express');
-const cookieParser = require('cookie-parser');
-const axios = require('axios');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-require('dotenv').config();
+import { Hono } from 'hono';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { sign, verify } from 'hono/jwt';
+import { serveStatic } from 'hono/bun';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Security configuration
-app.disable('x-powered-by');
-app.use(express.json());
-app.use(cookieParser());
+const app = new Hono();
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Database file setup
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
@@ -24,11 +17,11 @@ if (!fs.existsSync(path.dirname(DB_PATH))) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 }
 
-// Initialize database with defaults
-function readDb() {
+// Initialize database with defaults and perform migrations
+async function initDb() {
   const defaultAdminUser = process.env.ADMIN_USER || 'admin';
   const defaultAdminPass = process.env.ADMIN_PASS || 'caddyui_admin_secure_pass_123';
-  const defaultAdminPassHash = bcrypt.hashSync(defaultAdminPass, 10);
+  const defaultAdminPassHash = await Bun.password.hash(defaultAdminPass);
 
   const defaultOidcIssuer = process.env.OIDC_ISSUER || '';
   const defaultOidcClientId = process.env.OIDC_CLIENT_ID || '';
@@ -36,85 +29,138 @@ function readDb() {
   const defaultOidcRedirectUri = process.env.OIDC_REDIRECT_URI || '';
   const defaultOidcEnabled = !!(defaultOidcIssuer && defaultOidcClientId);
 
-  if (!fs.existsSync(DB_PATH)) {
-    const defaultDb = {
-      instances: [
-        {
-          id: 'local',
-          name: 'Local Caddy',
-          url: 'http://caddyui-caddy:2019',
-          ssoUpstreamDial: 'caddy-ui:3000', // How local Caddy reaches Caddy UI
-          isLocal: true
-        }
-      ],
-      proxies: [],
-      oidcConfig: {
-        issuer: defaultOidcIssuer,
-        clientId: defaultOidcClientId,
-        clientSecret: defaultOidcClientSecret,
-        redirectUri: defaultOidcRedirectUri,
-        enabled: defaultOidcEnabled
-      },
-      adminCredentials: {
-        username: defaultAdminUser,
-        passwordHash: defaultAdminPassHash
+  const defaultDbStructure = {
+    instances: [
+      {
+        id: 'local',
+        name: 'Local Caddy',
+        url: 'http://caddyui-caddy:2019',
+        ssoUpstreamDial: 'caddy-ui:3000',
+        isLocal: true
       }
-    };
-    fs.writeFileSync(DB_PATH, JSON.stringify(defaultDb, null, 2), 'utf-8');
-    return defaultDb;
+    ],
+    proxies: [],
+    users: [
+      {
+        id: 'admin',
+        username: defaultAdminUser,
+        passwordHash: defaultAdminPassHash,
+        role: 'admin',
+        ssoEnabled: false,
+        ssoProviderId: null,
+        twoFactorEnabled: false,
+        twoFactorSecret: null
+      }
+    ],
+    oidcProviders: [],
+    dashboardAuthConfig: {
+      ssoOnly: false,
+      allowedProviderIds: []
+    }
+  };
+
+  if (defaultOidcEnabled) {
+    defaultDbStructure.oidcProviders.push({
+      id: 'default',
+      name: 'Default OIDC',
+      issuer: defaultOidcIssuer,
+      clientId: defaultOidcClientId,
+      clientSecret: defaultOidcClientSecret,
+      redirectUri: defaultOidcRedirectUri,
+      enabled: true
+    });
   }
+
+  if (!fs.existsSync(DB_PATH)) {
+    fs.writeFileSync(DB_PATH, JSON.stringify(defaultDbStructure, null, 2), 'utf-8');
+    return;
+  }
+
   try {
     const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
-    // Ensure adminCredentials exists
     let modified = false;
-    if (!db.adminCredentials) {
-      db.adminCredentials = {
-        username: defaultAdminUser,
-        passwordHash: defaultAdminPassHash
-      };
+
+    // Migrate old structure
+    if (db.adminCredentials) {
+      if (!db.users) db.users = [];
+      const hasAdmin = db.users.some(u => u.username === db.adminCredentials.username);
+      if (!hasAdmin) {
+        db.users.push({
+          id: 'admin',
+          username: db.adminCredentials.username,
+          passwordHash: db.adminCredentials.passwordHash,
+          role: 'admin',
+          ssoEnabled: false,
+          ssoProviderId: null,
+          twoFactorEnabled: false,
+          twoFactorSecret: null
+        });
+      }
+      delete db.adminCredentials;
       modified = true;
     }
-    // Ensure oidcConfig exists
-    if (!db.oidcConfig) {
-      db.oidcConfig = {
-        issuer: defaultOidcIssuer,
-        clientId: defaultOidcClientId,
-        clientSecret: defaultOidcClientSecret,
-        redirectUri: defaultOidcRedirectUri,
-        enabled: defaultOidcEnabled
-      };
+
+    if (db.oidcConfig) {
+      if (!db.oidcProviders) db.oidcProviders = [];
+      if (db.oidcConfig.issuer && db.oidcConfig.clientId) {
+        const hasDefault = db.oidcProviders.some(p => p.id === 'default');
+        if (!hasDefault) {
+          db.oidcProviders.push({
+            id: 'default',
+            name: 'Default OIDC',
+            issuer: db.oidcConfig.issuer,
+            clientId: db.oidcConfig.clientId,
+            clientSecret: db.oidcConfig.clientSecret,
+            redirectUri: db.oidcConfig.redirectUri,
+            enabled: db.oidcConfig.enabled
+          });
+        }
+      }
+      delete db.oidcConfig;
       modified = true;
     }
+
+    // Ensure lists exist
+    if (!db.users) {
+      db.users = defaultDbStructure.users;
+      modified = true;
+    }
+    if (!db.oidcProviders) {
+      db.oidcProviders = defaultDbStructure.oidcProviders;
+      modified = true;
+    }
+    if (!db.instances) {
+      db.instances = defaultDbStructure.instances;
+      modified = true;
+    }
+    if (!db.proxies) {
+      db.proxies = defaultDbStructure.proxies;
+      modified = true;
+    }
+    if (!db.dashboardAuthConfig) {
+      db.dashboardAuthConfig = {
+        ssoOnly: false,
+        allowedProviderIds: []
+      };
+      modified = true;
+    } else if (db.dashboardAuthConfig.defaultProviderId !== undefined) {
+      db.dashboardAuthConfig.allowedProviderIds = db.dashboardAuthConfig.defaultProviderId
+        ? [db.dashboardAuthConfig.defaultProviderId]
+        : [];
+      delete db.dashboardAuthConfig.defaultProviderId;
+      modified = true;
+    }
+
     if (modified) {
       fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf-8');
     }
-    return db;
   } catch (err) {
-    console.error('Error reading DB, resetting to default:', err);
-    return {
-      instances: [
-        {
-          id: 'local',
-          name: 'Local Caddy',
-          url: 'http://caddyui-caddy:2019',
-          ssoUpstreamDial: 'caddy-ui:3000',
-          isLocal: true
-        }
-      ],
-      proxies: [],
-      oidcConfig: {
-        issuer: defaultOidcIssuer,
-        clientId: defaultOidcClientId,
-        clientSecret: defaultOidcClientSecret,
-        redirectUri: defaultOidcRedirectUri,
-        enabled: defaultOidcEnabled
-      },
-      adminCredentials: {
-        username: defaultAdminUser,
-        passwordHash: defaultAdminPassHash
-      }
-    };
+    console.error('Error migrating DB:', err);
   }
+}
+
+function readDb() {
+  return JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
 }
 
 function writeDb(data) {
@@ -139,50 +185,105 @@ function getJwtSecret() {
 const JWT_SECRET = getJwtSecret();
 
 // Get cookie name based on security context
-function getSessionCookieName(req) {
-  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+function getSessionCookieName(c) {
+  const isHttps = c.req.header('x-forwarded-proto') === 'https';
   return isHttps ? '__Host-caddyui-session' : 'caddyui-session';
 }
 
+// --- Native TOTP (2FA) Helper Functions (RFC 6238) ---
+function base32Decode(base32) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let cleanStr = base32.replace(/=+$/, '').toUpperCase();
+  let bits = '';
+  for (let i = 0; i < cleanStr.length; i++) {
+    const val = alphabet.indexOf(cleanStr[i]);
+    if (val === -1) throw new Error('Invalid base32 character');
+    bits += val.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(parseInt(bits.substring(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+function generateTotp(secret, timeOffset = 0) {
+  const key = base32Decode(secret);
+  const epoch = Math.floor(Date.now() / 1000);
+  const counter = Math.floor(epoch / 30) + timeOffset;
+
+  const buffer = Buffer.alloc(8);
+  buffer.writeUInt32BE(0, 0);
+  buffer.writeUInt32BE(counter, 4);
+
+  const hmac = crypto.createHmac('sha1', key).update(buffer).digest();
+  const offset = hmac[hmac.length - 1] & 0xf;
+  const codeBin = ((hmac[offset] & 0x7f) << 24) |
+                  ((hmac[offset + 1] & 0xff) << 16) |
+                  ((hmac[offset + 2] & 0xff) << 8) |
+                  (hmac[offset + 3] & 0xff);
+
+  const code = codeBin % 1000000;
+  return String(code).padStart(6, '0');
+}
+
+function verifyTotp(secret, code, windowSize = 1) {
+  if (!secret || !code) return false;
+  for (let i = -windowSize; i <= windowSize; i++) {
+    if (generateTotp(secret, i) === code) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function generateTotpSecret() {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let secret = '';
+  const bytes = crypto.randomBytes(10);
+  for (let i = 0; i < bytes.length; i++) {
+    secret += alphabet[bytes[i] % 32];
+  }
+  return secret;
+}
+
 // Authentication Middlewares
-function authenticateToken(req, res, next) {
-  const cookieName = getSessionCookieName(req);
-  const token = req.cookies[cookieName];
+const authenticateToken = async (c, next) => {
+  const cookieName = getSessionCookieName(c);
+  const token = getCookie(c, cookieName);
 
   if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return c.json({ error: 'Authentication required' }, 401);
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      res.clearCookie(cookieName);
-      return res.status(403).json({ error: 'Session expired or invalid' });
-    }
-    req.user = user;
-    next();
-  });
-}
+  try {
+    const decoded = await verify(token, JWT_SECRET, 'HS256');
+    c.set('user', decoded);
+    await next();
+  } catch (err) {
+    deleteCookie(c, cookieName);
+    return c.json({ error: 'Session expired or invalid' }, 401);
+  }
+};
 
 // CSRF Protection Middleware (Double Submit Cookie)
-function csrfProtection(req, res, next) {
-  // Safe methods do not require CSRF protection
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    return next();
+const csrfProtection = async (c, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
+    return await next();
   }
 
-  const csrfCookie = req.cookies['caddyui-csrf'];
-  const csrfHeader = req.headers['x-csrf-token'];
+  const csrfCookie = getCookie(c, 'caddyui-csrf');
+  const csrfHeader = c.req.header('x-csrf-token');
 
   if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
-    return res.status(403).json({ error: 'Invalid or missing CSRF token' });
+    return c.json({ error: 'Invalid or missing CSRF token' }, 403);
   }
-  next();
-}
+  await next();
+};
 
 // Helper to sanitize dial targets for Caddy
 function cleanDialTarget(target) {
   let clean = target.replace(/^(https?:\/\/)/, '');
-  // Strip trailing slash or path if any
   clean = clean.split('/')[0];
   if (!clean.includes(':')) {
     if (target.startsWith('https://')) {
@@ -198,22 +299,20 @@ function cleanDialTarget(target) {
 async function syncCaddyConfig(instance, proxies) {
   const targetUrl = instance.url;
   
-  // 1. Fetch current Caddy config
   let caddyConfig = {};
   try {
-    const response = await axios.get(`${targetUrl}/config/`, { timeout: 3000 });
-    caddyConfig = response.data || {};
+    const response = await fetch(`${targetUrl}/config/`, { signal: AbortSignal.timeout(3000) });
+    if (response.ok) {
+      caddyConfig = await response.json();
+    }
   } catch (err) {
     console.log(`Could not fetch config from ${instance.name}, creating new structure:`, err.message);
-    caddyConfig = {};
   }
 
-  // Ensure standard Caddy structure exists
   if (!caddyConfig.apps) caddyConfig.apps = {};
   if (!caddyConfig.apps.http) caddyConfig.apps.http = {};
   if (!caddyConfig.apps.http.servers) caddyConfig.apps.http.servers = {};
   
-  // Set default listener if not exists
   if (!caddyConfig.apps.http.servers.srv0) {
     caddyConfig.apps.http.servers.srv0 = {
       listen: [":80", ":443"],
@@ -221,15 +320,14 @@ async function syncCaddyConfig(instance, proxies) {
     };
   }
 
-  // Filter proxies belonging to this instance
   const instanceProxies = proxies.filter(p => p.instanceId === instance.id);
 
-  // Generate routes
   const routes = instanceProxies.map(proxy => {
     const innerRoutes = [];
+    const isSso = proxy.authMode === 'sso' || (proxy.authMode === undefined && proxy.ssoEnabled);
+    const isBasic = proxy.authMode === 'basic';
 
-    // Route 1: SSO / Forward Auth (if enabled)
-    if (proxy.ssoEnabled) {
+    if (isSso) {
       innerRoutes.push({
         handle: [
           {
@@ -273,7 +371,20 @@ async function syncCaddyConfig(instance, proxies) {
       });
     }
 
-    // Route 2: Actual Reverse Proxy to target
+    if (isBasic && proxy.basicAuthCredentials && proxy.basicAuthCredentials.length > 0) {
+      innerRoutes.push({
+        handle: [
+          {
+            handler: "basic_auth",
+            accounts: proxy.basicAuthCredentials.map(cred => ({
+              username: cred.username,
+              password: cred.passwordHash
+            }))
+          }
+        ]
+      });
+    }
+
     innerRoutes.push({
       handle: [
         {
@@ -303,40 +414,280 @@ async function syncCaddyConfig(instance, proxies) {
     };
   });
 
-  // Assign routes
   caddyConfig.apps.http.servers.srv0.routes = routes;
 
-  // 2. Post configuration back to Caddy
   console.log(`Pushing synced configuration to ${instance.name} (${targetUrl})...`);
-  await axios.post(`${targetUrl}/load`, caddyConfig, {
+  const response = await fetch(`${targetUrl}/load`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    timeout: 5000
+    body: JSON.stringify(caddyConfig),
+    signal: AbortSignal.timeout(5000)
   });
+  if (!response.ok) {
+    throw new Error(`Caddy load returned status ${response.status}`);
+  }
 }
 
 // --- API ROUTES ---
 
-// Helper to generate CSRF token
-app.get('/api/csrf', (req, res) => {
+app.get('/api/csrf', (c) => {
   const token = crypto.randomBytes(32).toString('hex');
-  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
-  res.cookie('caddyui-csrf', token, {
-    httpOnly: false, // Read by frontend JS
+  const isHttps = c.req.header('x-forwarded-proto') === 'https';
+  setCookie(c, 'caddyui-csrf', token, {
+    httpOnly: false,
     secure: isHttps,
-    sameSite: 'lax'
+    sameSite: 'Lax'
   });
-  res.json({ csrfToken: token });
+  return c.json({ csrfToken: token });
 });
 
-// Get connection status of Caddy Instances
-app.get('/api/status', authenticateToken, async (req, res) => {
+app.get('/api/me', authenticateToken, (c) => {
+  const user = c.get('user');
+  return c.json({ username: user.username });
+});
+
+app.get('/api/oidc-providers', authenticateToken, (c) => {
+  const db = readDb();
+  const sanitized = db.oidcProviders.map(p => ({
+    id: p.id,
+    name: p.name,
+    issuer: p.issuer,
+    clientId: p.clientId,
+    redirectUri: p.redirectUri,
+    enabled: p.enabled
+  }));
+  return c.json(sanitized);
+});
+
+app.post('/api/oidc-providers', authenticateToken, csrfProtection, async (c) => {
+  const { name, issuer, clientId, clientSecret, redirectUri, enabled } = await c.req.json();
+  if (!name || !issuer || !clientId || !redirectUri) {
+    return c.json({ error: 'Name, Issuer, Client ID, and Redirect URI are required' }, 400);
+  }
+  const db = readDb();
+  const newProvider = {
+    id: crypto.randomBytes(8).toString('hex'),
+    name: String(name).trim(),
+    issuer: String(issuer).trim(),
+    clientId: String(clientId).trim(),
+    clientSecret: clientSecret ? String(clientSecret).trim() : '',
+    redirectUri: String(redirectUri).trim(),
+    enabled: enabled !== undefined ? Boolean(enabled) : true
+  };
+  db.oidcProviders.push(newProvider);
+  writeDb(db);
+  return c.json(newProvider, 201);
+});
+
+app.put('/api/oidc-providers/:id', authenticateToken, csrfProtection, async (c) => {
+  const id = c.req.param('id');
+  const { name, issuer, clientId, clientSecret, redirectUri, enabled } = await c.req.json();
+  const db = readDb();
+  const idx = db.oidcProviders.findIndex(p => p.id === id);
+  if (idx === -1) {
+    return c.json({ error: 'SSO Provider not found' }, 404);
+  }
+  const current = db.oidcProviders[idx];
+  db.oidcProviders[idx] = {
+    ...current,
+    name: name ? String(name).trim() : current.name,
+    issuer: issuer ? String(issuer).trim() : current.issuer,
+    clientId: clientId ? String(clientId).trim() : current.clientId,
+    clientSecret: clientSecret !== undefined ? String(clientSecret).trim() : current.clientSecret,
+    redirectUri: redirectUri ? String(redirectUri).trim() : current.redirectUri,
+    enabled: enabled !== undefined ? Boolean(enabled) : current.enabled
+  };
+  writeDb(db);
+  return c.json(db.oidcProviders[idx]);
+});
+
+app.delete('/api/oidc-providers/:id', authenticateToken, csrfProtection, (c) => {
+  const id = c.req.param('id');
+  const db = readDb();
+  db.oidcProviders = db.oidcProviders.filter(p => p.id !== id);
+  writeDb(db);
+  return c.json({ message: 'SSO Provider deleted' });
+});
+
+app.get('/api/users', authenticateToken, (c) => {
+  const db = readDb();
+  const sanitized = db.users.map(u => ({
+    id: u.id,
+    username: u.username,
+    role: u.role,
+    ssoEnabled: u.ssoEnabled,
+    ssoProviderId: u.ssoProviderId,
+    twoFactorEnabled: u.twoFactorEnabled
+  }));
+  return c.json(sanitized);
+});
+
+app.post('/api/users', authenticateToken, csrfProtection, async (c) => {
+  const { username, password, role, ssoEnabled, ssoProviderId } = await c.req.json();
+  if (!username || typeof username !== 'string' || username.trim().length < 3) {
+    return c.json({ error: 'Username is required and must be at least 3 characters.' }, 400);
+  }
+  const db = readDb();
+  const exists = db.users.some(u => u.username.toLowerCase() === username.trim().toLowerCase());
+  if (exists) {
+    return c.json({ error: 'Username already exists' }, 400);
+  }
+  
+  let passwordHash = '';
+  if (password) {
+    passwordHash = await Bun.password.hash(password);
+  } else if (!ssoEnabled) {
+    return c.json({ error: 'Password is required when SSO is disabled.' }, 400);
+  }
+
+  const newUser = {
+    id: crypto.randomBytes(8).toString('hex'),
+    username: String(username).trim(),
+    passwordHash,
+    role: role === 'admin' ? 'admin' : 'viewer',
+    ssoEnabled: Boolean(ssoEnabled),
+    ssoProviderId: ssoProviderId ? String(ssoProviderId) : null,
+    twoFactorEnabled: false,
+    twoFactorSecret: null
+  };
+  db.users.push(newUser);
+  writeDb(db);
+  return c.json({
+    id: newUser.id,
+    username: newUser.username,
+    role: newUser.role,
+    ssoEnabled: newUser.ssoEnabled,
+    ssoProviderId: newUser.ssoProviderId,
+    twoFactorEnabled: newUser.twoFactorEnabled
+  }, 201);
+});
+
+app.put('/api/users/:id', authenticateToken, csrfProtection, async (c) => {
+  const id = c.req.param('id');
+  const { username, password, role, ssoEnabled, ssoProviderId } = await c.req.json();
+  const db = readDb();
+  const idx = db.users.findIndex(u => u.id === id);
+  if (idx === -1) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  const current = db.users[idx];
+  const currentUser = c.get('user');
+  if (current.id === 'admin' && currentUser.username !== current.username) {
+    return c.json({ error: 'Only the default admin can modify their account.' }, 403);
+  }
+
+  if (username && username.trim().toLowerCase() !== current.username.toLowerCase()) {
+    const exists = db.users.some(u => u.username.toLowerCase() === username.trim().toLowerCase());
+    if (exists) {
+      return c.json({ error: 'Username already in use' }, 400);
+    }
+    current.username = String(username).trim();
+  }
+
+  if (password) {
+    current.passwordHash = await Bun.password.hash(password);
+  }
+
+  if (role) {
+    current.role = role === 'admin' ? 'admin' : 'viewer';
+  }
+
+  if (ssoEnabled !== undefined) {
+    current.ssoEnabled = Boolean(ssoEnabled);
+  }
+
+  if (ssoProviderId !== undefined) {
+    current.ssoProviderId = ssoProviderId ? String(ssoProviderId) : null;
+  }
+
+  writeDb(db);
+  return c.json({
+    id: current.id,
+    username: current.username,
+    role: current.role,
+    ssoEnabled: current.ssoEnabled,
+    ssoProviderId: current.ssoProviderId,
+    twoFactorEnabled: current.twoFactorEnabled
+  });
+});
+
+app.delete('/api/users/:id', authenticateToken, csrfProtection, (c) => {
+  const id = c.req.param('id');
+  const db = readDb();
+  const user = db.users.find(u => u.id === id);
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  if (user.id === 'admin') {
+    return c.json({ error: 'Cannot delete the default admin account.' }, 400);
+  }
+  db.users = db.users.filter(u => u.id !== id);
+  writeDb(db);
+  return c.json({ message: 'User deleted successfully' });
+});
+
+app.post('/api/users/:id/2fa/setup', authenticateToken, csrfProtection, (c) => {
+  const id = c.req.param('id');
+  const db = readDb();
+  const user = db.users.find(u => u.id === id);
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  const secret = generateTotpSecret();
+  user.twoFactorTempSecret = secret;
+  writeDb(db);
+
+  const otpauthUrl = `otpauth://totp/CaddyUI:${encodeURIComponent(user.username)}?secret=${secret}&issuer=CaddyUI`;
+  return c.json({ secret, otpauthUrl });
+});
+
+app.post('/api/users/:id/2fa/enable', authenticateToken, csrfProtection, async (c) => {
+  const id = c.req.param('id');
+  const { code } = await c.req.json();
+  if (!code) {
+    return c.json({ error: 'Verification code is required' }, 400);
+  }
+  const db = readDb();
+  const user = db.users.find(u => u.id === id);
+  if (!user || !user.twoFactorTempSecret) {
+    return c.json({ error: '2FA setup was not initiated.' }, 400);
+  }
+
+  const verified = verifyTotp(user.twoFactorTempSecret, code);
+  if (!verified) {
+    return c.json({ error: 'Invalid verification code.' }, 400);
+  }
+
+  user.twoFactorEnabled = true;
+  user.twoFactorSecret = user.twoFactorTempSecret;
+  delete user.twoFactorTempSecret;
+  writeDb(db);
+  return c.json({ success: true, message: '2FA enabled successfully!' });
+});
+
+app.post('/api/users/:id/2fa/disable', authenticateToken, csrfProtection, (c) => {
+  const id = c.req.param('id');
+  const db = readDb();
+  const user = db.users.find(u => u.id === id);
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  user.twoFactorEnabled = false;
+  user.twoFactorSecret = null;
+  delete user.twoFactorTempSecret;
+  writeDb(db);
+  return c.json({ success: true, message: '2FA disabled successfully!' });
+});
+
+app.get('/api/status', authenticateToken, async (c) => {
   const db = readDb();
   const statusList = [];
 
   for (const instance of db.instances) {
     try {
       const start = Date.now();
-      await axios.get(`${instance.url}/config/`, { timeout: 2000 });
+      await fetch(`${instance.url}/config/`, { signal: AbortSignal.timeout(2000) });
       const latency = Date.now() - start;
       statusList.push({ id: instance.id, online: true, latency });
     } catch (err) {
@@ -344,36 +695,38 @@ app.get('/api/status', authenticateToken, async (req, res) => {
     }
   }
 
-  res.json(statusList);
+  return c.json(statusList);
 });
 
-// Get raw Caddy active JSON configuration
-app.get('/api/raw-config/:instanceId', authenticateToken, async (req, res) => {
+app.get('/api/raw-config/:instanceId', authenticateToken, async (c) => {
+  const instanceId = c.req.param('instanceId');
   const db = readDb();
-  const instance = db.instances.find(i => i.id === req.params.instanceId);
+  const instance = db.instances.find(i => i.id === instanceId);
   if (!instance) {
-    return res.status(404).json({ error: 'Instance not found' });
+    return c.json({ error: 'Instance not found' }, 404);
   }
 
   try {
-    const response = await axios.get(`${instance.url}/config/`, { timeout: 3000 });
-    res.json(response.data || {});
+    const response = await fetch(`${instance.url}/config/`, { signal: AbortSignal.timeout(3000) });
+    if (response.ok) {
+      return c.json(await response.json());
+    } else {
+      return c.json({ error: `Failed to fetch raw config: ${response.statusText}` }, 500);
+    }
   } catch (err) {
-    res.status(500).json({ error: `Failed to fetch raw config: ${err.message}` });
+    return c.json({ error: `Failed to fetch raw config: ${err.message}` }, 500);
   }
 });
 
-// Instances API
-app.get('/api/instances', authenticateToken, (req, res) => {
+app.get('/api/instances', authenticateToken, (c) => {
   const db = readDb();
-  // Strip sensitive info if any
-  res.json(db.instances);
+  return c.json(db.instances);
 });
 
-app.post('/api/instances', authenticateToken, csrfProtection, (req, res) => {
-  const { name, url, ssoUpstreamDial } = req.body;
+app.post('/api/instances', authenticateToken, csrfProtection, async (c) => {
+  const { name, url, ssoUpstreamDial } = await c.req.json();
   if (!name || !url) {
-    return res.status(400).json({ error: 'Name and URL are required' });
+    return c.json({ error: 'Name and URL are required' }, 400);
   }
 
   const db = readDb();
@@ -387,43 +740,50 @@ app.post('/api/instances', authenticateToken, csrfProtection, (req, res) => {
 
   db.instances.push(newInstance);
   writeDb(db);
-  res.status(201).json(newInstance);
+  return c.json(newInstance, 201);
 });
 
-app.delete('/api/instances/:id', authenticateToken, csrfProtection, (req, res) => {
+app.delete('/api/instances/:id', authenticateToken, csrfProtection, (c) => {
+  const id = c.req.param('id');
   const db = readDb();
-  const instance = db.instances.find(i => i.id === req.params.id);
+  const instance = db.instances.find(i => i.id === id);
   
   if (!instance) {
-    return res.status(404).json({ error: 'Instance not found' });
+    return c.json({ error: 'Instance not found' }, 404);
   }
   if (instance.isLocal) {
-    return res.status(400).json({ error: 'Cannot delete local Caddy instance' });
+    return c.json({ error: 'Cannot delete local Caddy instance' }, 400);
   }
 
-  db.instances = db.instances.filter(i => i.id !== req.params.id);
-  // Also clean up proxies belonging to deleted instance
-  db.proxies = db.proxies.filter(p => p.instanceId !== req.params.id);
+  db.instances = db.instances.filter(i => i.id !== id);
+  db.proxies = db.proxies.filter(p => p.instanceId !== id);
   writeDb(db);
-  res.json({ message: 'Instance deleted successfully' });
+  return c.json({ message: 'Instance deleted successfully' });
 });
 
-// Proxies API
-app.get('/api/proxies', authenticateToken, (req, res) => {
+app.get('/api/proxies', authenticateToken, (c) => {
   const db = readDb();
-  res.json(db.proxies);
+  return c.json(db.proxies);
 });
 
-app.post('/api/proxies', authenticateToken, csrfProtection, async (req, res) => {
-  const { instanceId, host, target, ssoEnabled } = req.body;
+app.post('/api/proxies', authenticateToken, csrfProtection, async (c) => {
+  const { instanceId, host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials } = await c.req.json();
   if (!instanceId || !host || !target) {
-    return res.status(400).json({ error: 'Instance ID, Host, and Target are required' });
+    return c.json({ error: 'Instance ID, Host, and Target are required' }, 400);
   }
 
   const db = readDb();
   const instance = db.instances.find(i => i.id === instanceId);
   if (!instance) {
-    return res.status(404).json({ error: 'Caddy instance not found' });
+    return c.json({ error: 'Caddy instance not found' }, 404);
+  }
+
+  let credentials = [];
+  if (basicAuthCredentials && Array.isArray(basicAuthCredentials)) {
+    credentials = await Promise.all(basicAuthCredentials.map(async cred => ({
+      username: String(cred.username).trim(),
+      passwordHash: cred.password ? await Bun.password.hash(cred.password) : ''
+    })));
   }
 
   const newProxy = {
@@ -431,35 +791,54 @@ app.post('/api/proxies', authenticateToken, csrfProtection, async (req, res) => 
     instanceId: String(instanceId),
     host: String(host).trim().toLowerCase(),
     target: String(target).trim(),
-    ssoEnabled: Boolean(ssoEnabled)
+    ssoEnabled: Boolean(ssoEnabled),
+    authMode: authMode || 'none',
+    ssoProviderId: ssoProviderId || null,
+    basicAuthCredentials: credentials
   };
 
   db.proxies.push(newProxy);
   writeDb(db);
 
-  // Auto-sync config to Caddy
   try {
     await syncCaddyConfig(instance, db.proxies);
-    res.status(201).json({ proxy: newProxy, synced: true });
+    return c.json({ proxy: newProxy, synced: true }, 201);
   } catch (err) {
-    res.status(201).json({ proxy: newProxy, synced: false, syncError: err.message });
+    return c.json({ proxy: newProxy, synced: false, syncError: err.message }, 201);
   }
 });
 
-app.put('/api/proxies/:id', authenticateToken, csrfProtection, async (req, res) => {
-  const { host, target, ssoEnabled } = req.body;
+app.put('/api/proxies/:id', authenticateToken, csrfProtection, async (c) => {
+  const id = c.req.param('id');
+  const { host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials } = await c.req.json();
   const db = readDb();
-  const proxyIndex = db.proxies.findIndex(p => p.id === req.params.id);
+  const proxyIndex = db.proxies.findIndex(p => p.id === id);
 
   if (proxyIndex === -1) {
-    return res.status(404).json({ error: 'Proxy route not found' });
+    return c.json({ error: 'Proxy route not found' }, 404);
+  }
+
+  const currentProxy = db.proxies[proxyIndex];
+
+  let credentials = currentProxy.basicAuthCredentials || [];
+  if (basicAuthCredentials && Array.isArray(basicAuthCredentials)) {
+    credentials = await Promise.all(basicAuthCredentials.map(async cred => {
+      const existing = (currentProxy.basicAuthCredentials || []).find(c => c.username === cred.username);
+      return {
+        username: String(cred.username).trim(),
+        passwordHash: cred.password ? await Bun.password.hash(cred.password) : (existing ? existing.passwordHash : '')
+      };
+    }));
   }
 
   const updatedProxy = {
-    ...db.proxies[proxyIndex],
-    host: host ? String(host).trim().toLowerCase() : db.proxies[proxyIndex].host,
-    target: target ? String(target).trim() : db.proxies[proxyIndex].target,
-    ssoEnabled: ssoEnabled !== undefined ? Boolean(ssoEnabled) : db.proxies[proxyIndex].ssoEnabled
+    ...currentProxy,
+    host: host ? String(host).trim().toLowerCase() : currentProxy.host,
+    target: target ? String(target).trim() : currentProxy.target,
+    ssoEnabled: ssoEnabled !== undefined ? Boolean(ssoEnabled) : currentProxy.ssoEnabled,
+    authMode: authMode !== undefined ? authMode : currentProxy.authMode,
+    ssoProviderId: ssoProviderId !== undefined ? ssoProviderId : currentProxy.ssoProviderId,
+    basicAuthCredentials: credentials
   };
 
   db.proxies[proxyIndex] = updatedProxy;
@@ -469,331 +848,520 @@ app.put('/api/proxies/:id', authenticateToken, csrfProtection, async (req, res) 
   if (instance) {
     try {
       await syncCaddyConfig(instance, db.proxies);
-      res.json({ proxy: updatedProxy, synced: true });
+      return c.json({ proxy: updatedProxy, synced: true });
     } catch (err) {
-      res.json({ proxy: updatedProxy, synced: false, syncError: err.message });
+      return c.json({ proxy: updatedProxy, synced: false, syncError: err.message });
     }
   } else {
-    res.json({ proxy: updatedProxy, synced: false, syncError: 'Instance not found' });
+    return c.json({ proxy: updatedProxy, synced: false, syncError: 'Instance not found' });
   }
 });
 
-app.delete('/api/proxies/:id', authenticateToken, csrfProtection, async (req, res) => {
+app.delete('/api/proxies/:id', authenticateToken, csrfProtection, async (c) => {
+  const id = c.req.param('id');
   const db = readDb();
-  const proxy = db.proxies.find(p => p.id === req.params.id);
+  const proxy = db.proxies.find(p => p.id === id);
 
   if (!proxy) {
-    return res.status(404).json({ error: 'Proxy route not found' });
+    return c.json({ error: 'Proxy route not found' }, 404);
   }
 
-  db.proxies = db.proxies.filter(p => p.id !== req.params.id);
+  db.proxies = db.proxies.filter(p => p.id !== id);
   writeDb(db);
 
   const instance = db.instances.find(i => i.id === proxy.instanceId);
   if (instance) {
     try {
       await syncCaddyConfig(instance, db.proxies);
-      res.json({ message: 'Proxy deleted and configuration synced', synced: true });
+      return c.json({ message: 'Proxy route deleted and synced', synced: true });
     } catch (err) {
-      res.json({ message: 'Proxy deleted but sync failed', synced: false, syncError: err.message });
+      return c.json({ message: 'Proxy route deleted locally, sync failed', synced: false, syncError: err.message });
     }
-  } else {
-    res.json({ message: 'Proxy deleted', synced: false });
   }
+  return c.json({ message: 'Proxy route deleted locally', synced: false });
 });
 
-// Sync configuration endpoint
-app.post('/api/sync/:instanceId', authenticateToken, csrfProtection, async (req, res) => {
+app.post('/api/sync/:instanceId', authenticateToken, csrfProtection, async (c) => {
+  const instanceId = c.req.param('instanceId');
   const db = readDb();
-  const instance = db.instances.find(i => i.id === req.params.instanceId);
+  const instance = db.instances.find(i => i.id === instanceId);
   if (!instance) {
-    return res.status(404).json({ error: 'Instance not found' });
+    return c.json({ error: 'Instance not found' }, 404);
   }
 
   try {
     await syncCaddyConfig(instance, db.proxies);
-    res.json({ message: 'Configuration successfully synced to Caddy' });
+    return c.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: `Sync failed: ${err.message}` });
+    return c.json({ error: err.message }, 500);
   }
 });
 
-// Configure SSO settings
-app.get('/api/oidc', authenticateToken, (req, res) => {
+app.get('/api/oidc', authenticateToken, (c) => {
   const db = readDb();
-  res.json({
-    issuer: db.oidcConfig.issuer,
-    clientId: db.oidcConfig.clientId,
-    enabled: db.oidcConfig.enabled,
-    redirectUri: db.oidcConfig.redirectUri
+  const defaultProvider = db.oidcProviders.find(p => p.id === 'default');
+  return c.json({
+    enabled: defaultProvider ? defaultProvider.enabled : false,
+    issuer: defaultProvider ? defaultProvider.issuer : '',
+    clientId: defaultProvider ? defaultProvider.clientId : '',
+    redirectUri: defaultProvider ? defaultProvider.redirectUri : ''
   });
 });
 
-app.post('/api/oidc', authenticateToken, csrfProtection, (req, res) => {
-  const { issuer, clientId, clientSecret, redirectUri, enabled } = req.body;
+app.post('/api/oidc', authenticateToken, csrfProtection, async (c) => {
+  const { enabled, issuer, clientId, clientSecret, redirectUri } = await c.req.json();
   const db = readDb();
-
-  db.oidcConfig = {
-    issuer: issuer ? String(issuer) : db.oidcConfig.issuer,
-    clientId: clientId ? String(clientId) : db.oidcConfig.clientId,
-    clientSecret: clientSecret ? String(clientSecret) : db.oidcConfig.clientSecret,
-    redirectUri: redirectUri ? String(redirectUri) : db.oidcConfig.redirectUri,
-    enabled: enabled !== undefined ? Boolean(enabled) : db.oidcConfig.enabled
-  };
-
+  let idx = db.oidcProviders.findIndex(p => p.id === 'default');
+  if (idx === -1) {
+    const defaultProvider = {
+      id: 'default',
+      name: 'Default OIDC',
+      issuer: issuer || '',
+      clientId: clientId || '',
+      clientSecret: clientSecret || '',
+      redirectUri: redirectUri || '',
+      enabled: Boolean(enabled)
+    };
+    db.oidcProviders.push(defaultProvider);
+  } else {
+    const current = db.oidcProviders[idx];
+    db.oidcProviders[idx] = {
+      ...current,
+      issuer: issuer !== undefined ? String(issuer).trim() : current.issuer,
+      clientId: clientId !== undefined ? String(clientId).trim() : current.clientId,
+      clientSecret: clientSecret !== undefined ? String(clientSecret).trim() : current.clientSecret,
+      redirectUri: redirectUri !== undefined ? String(redirectUri).trim() : current.redirectUri,
+      enabled: enabled !== undefined ? Boolean(enabled) : current.enabled
+    };
+  }
   writeDb(db);
-  res.json({ message: 'SSO configuration updated successfully' });
+  return c.json({ success: true });
 });
 
-// Get admin credentials (username only for security)
-app.get('/api/admin-credentials', authenticateToken, (req, res) => {
+app.get('/api/admin-credentials', authenticateToken, (c) => {
   const db = readDb();
-  res.json({
-    username: db.adminCredentials.username
-  });
+  const admin = db.users.find(u => u.id === 'admin');
+  return c.json({ username: admin ? admin.username : 'admin' });
 });
 
-// Update admin credentials
-app.post('/api/admin-credentials', authenticateToken, csrfProtection, (req, res) => {
-  const { username, password } = req.body;
-  
+app.post('/api/admin-credentials', authenticateToken, csrfProtection, async (c) => {
+  const { username, password } = await c.req.json();
   if (!username || typeof username !== 'string' || username.trim().length < 3) {
-    return res.status(400).json({ error: 'Username must be at least 3 characters long.' });
-  }
-
-  if (password) {
-    if (typeof password !== 'string' || password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
-    }
+    return c.json({ error: 'Username must be at least 3 characters.' }, 400);
   }
 
   const db = readDb();
-  db.adminCredentials.username = username.trim();
-  if (password) {
-    db.adminCredentials.passwordHash = bcrypt.hashSync(password, 10);
+  const adminIdx = db.users.findIndex(u => u.id === 'admin');
+  if (adminIdx === -1) {
+    return c.json({ error: 'Admin user not found' }, 404);
   }
 
+  db.users[adminIdx].username = String(username).trim();
+  if (password) {
+    db.users[adminIdx].passwordHash = await Bun.password.hash(password);
+  }
   writeDb(db);
-  res.json({ message: 'Admin credentials updated successfully' });
+  return c.json({ success: true });
 });
 
-// --- AUTHENTICATION FLOWS ---
-
-// Fallback password login
-app.post('/auth/login', async (req, res) => {
-  const { username, password } = req.body;
+app.get('/api/dashboard-auth-config', authenticateToken, (c) => {
   const db = readDb();
-  const credentials = db.adminCredentials;
+  return c.json(db.dashboardAuthConfig || { ssoOnly: false, allowedProviderIds: [] });
+});
 
-  if (username === credentials.username && bcrypt.compareSync(password, credentials.passwordHash)) {
-    const userSession = { username, role: 'admin' };
-    const token = jwt.sign(userSession, JWT_SECRET, { expiresIn: '8h' });
+app.post('/api/dashboard-auth-config', authenticateToken, csrfProtection, async (c) => {
+  const { ssoOnly, allowedProviderIds } = await c.req.json();
+  const db = readDb();
+  db.dashboardAuthConfig = {
+    ssoOnly: Boolean(ssoOnly),
+    allowedProviderIds: Array.isArray(allowedProviderIds) ? allowedProviderIds : []
+  };
+  writeDb(db);
+  return c.json({ success: true });
+});
 
-    const cookieName = getSessionCookieName(req);
-    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+app.post('/auth/login', async (c) => {
+  const { username, password } = await c.req.json();
+  if (!username || !password) {
+    return c.json({ error: 'Username and password are required' }, 400);
+  }
 
-    res.cookie(cookieName, token, {
+  const db = readDb();
+  const dashConfig = db.dashboardAuthConfig || { ssoOnly: false, allowedProviderIds: [] };
+  if (dashConfig.ssoOnly && username.toLowerCase() !== 'admin') {
+    return c.json({ error: 'This dashboard is configured for SSO login only.' }, 403);
+  }
+
+  const user = db.users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+
+  if (!user) {
+    return c.json({ error: 'Invalid username or password' }, 401);
+  }
+
+  if (user.ssoEnabled && !user.passwordHash) {
+    return c.json({ error: 'This account is configured to sign in with SSO only.' }, 401);
+  }
+
+  const matched = await Bun.password.verify(password, user.passwordHash);
+  if (!matched) {
+    return c.json({ error: 'Invalid username or password' }, 401);
+  }
+
+  if (user.twoFactorEnabled) {
+    const pendingPayload = { userId: user.id, username: user.username, pending2fa: true, exp: Math.floor(Date.now() / 1000) + 10 * 60 };
+    const pendingToken = await sign(pendingPayload, JWT_SECRET, 'HS256');
+
+    const isHttps = c.req.header('x-forwarded-proto') === 'https';
+    setCookie(c, 'caddyui-pending2fa', pendingToken, {
       httpOnly: true,
       secure: isHttps,
-      sameSite: 'lax',
-      maxAge: 8 * 60 * 60 * 1000 // 8 hours
+      sameSite: 'Lax',
+      maxAge: 10 * 60
     });
 
-    return res.json({ success: true, redirect: '/' });
+    return c.json({ success: true, pending2fa: true, redirect: '/login-2fa' });
   }
 
-  res.status(401).json({ error: 'Invalid username or password' });
+  const userSession = { username: user.username, role: user.role, exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60 };
+  const token = await sign(userSession, JWT_SECRET, 'HS256');
+
+  const cookieName = getSessionCookieName(c);
+  const isHttps = c.req.header('x-forwarded-proto') === 'https';
+
+  setCookie(c, cookieName, token, {
+    httpOnly: true,
+    secure: isHttps,
+    sameSite: 'Lax',
+    maxAge: 8 * 60 * 60
+  });
+
+  return c.json({ success: true, redirect: '/' });
 });
 
-// Get public auth configuration (OIDC enabled status)
-app.get('/auth/config', (req, res) => {
+app.post('/auth/verify-2fa', async (c) => {
+  const { code } = await c.req.json();
+  if (!code) {
+    return c.json({ error: 'Code is required' }, 400);
+  }
+
+  const pendingToken = getCookie(c, 'caddyui-pending2fa');
+  if (!pendingToken) {
+    return c.json({ error: 'No pending 2FA authentication found' }, 401);
+  }
+
+  try {
+    const decoded = await verify(pendingToken, JWT_SECRET, 'HS256');
+    if (!decoded.pending2fa) {
+      deleteCookie(c, 'caddyui-pending2fa');
+      return c.json({ error: 'Invalid or expired 2FA session' }, 401);
+    }
+
+    const db = readDb();
+    const user = db.users.find(u => u.id === decoded.userId);
+    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+      deleteCookie(c, 'caddyui-pending2fa');
+      return c.json({ error: '2FA is not enabled for this user' }, 400);
+    }
+
+    const verified = verifyTotp(user.twoFactorSecret, code);
+    if (!verified) {
+      return c.json({ error: 'Invalid verification code' }, 400);
+    }
+
+    const userSession = { username: user.username, role: user.role, exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60 };
+    const token = await sign(userSession, JWT_SECRET, 'HS256');
+
+    const cookieName = getSessionCookieName(c);
+    const isHttps = c.req.header('x-forwarded-proto') === 'https';
+
+    deleteCookie(c, 'caddyui-pending2fa');
+    setCookie(c, cookieName, token, {
+      httpOnly: true,
+      secure: isHttps,
+      sameSite: 'Lax',
+      maxAge: 8 * 60 * 60
+    });
+
+    return c.json({ success: true, redirect: '/' });
+  } catch (err) {
+    deleteCookie(c, 'caddyui-pending2fa');
+    return c.json({ error: 'Invalid or expired 2FA session' }, 401);
+  }
+});
+
+app.get('/auth/config', (c) => {
   const db = readDb();
-  res.json({
-    ssoEnabled: db.oidcConfig && db.oidcConfig.enabled
+  const enabledProviders = db.oidcProviders.filter(p => p.enabled);
+  const dashConfig = db.dashboardAuthConfig || { ssoOnly: false, allowedProviderIds: [] };
+  const allowedIds = dashConfig.allowedProviderIds || [];
+  
+  // Filter OIDC providers allowed for dashboard login.
+  // If allowedIds is empty, we default to showing all enabled providers.
+  const allowedProviders = allowedIds.length > 0
+    ? enabledProviders.filter(p => allowedIds.includes(p.id))
+    : enabledProviders;
+
+  return c.json({
+    ssoEnabled: allowedProviders.length > 0,
+    providers: allowedProviders.map(p => ({ id: p.id, name: p.name })),
+    ssoOnly: dashConfig.ssoOnly,
+    allowedProviderIds: allowedIds
   });
 });
 
-// Redirect to OIDC provider
-app.get('/auth/sso', async (req, res) => {
+app.get('/auth/sso', async (c) => {
+  const providerId = c.req.query('providerId');
+  const redirectParam = c.req.query('redirect') || '/';
+
   const db = readDb();
-  if (!db.oidcConfig.enabled || !db.oidcConfig.issuer || !db.oidcConfig.clientId) {
-    return res.redirect('/login.html?error=SSO+not+configured');
+  let provider = null;
+  if (providerId) {
+    provider = db.oidcProviders.find(p => p.id === providerId && p.enabled);
+  } else {
+    provider = db.oidcProviders.find(p => p.enabled);
   }
 
-  const redirectUrl = req.query.redirect || '/';
-  const state = crypto.randomBytes(16).toString('hex') + '|' + Buffer.from(redirectUrl).toString('base64');
+  if (!provider) {
+    return c.redirect(`/login?error=No+enabled+SSO+provider+found`);
+  }
 
   try {
-    // Fetch OIDC configuration
-    const discoveryUrl = `${db.oidcConfig.issuer}/.well-known/openid-configuration`;
-    const discovery = await axios.get(discoveryUrl);
-    const authEndpoint = discovery.data.authorization_endpoint;
+    const discoveryUrl = `${provider.issuer}/.well-known/openid-configuration`;
+    const discRes = await fetch(discoveryUrl);
+    if (!discRes.ok) throw new Error(`OIDC configuration discovery failed`);
+    const discovery = await discRes.json();
+    const authEndpoint = discovery.authorization_endpoint;
 
-    const queryParams = new URLSearchParams({
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const state = `${provider.id}|${nonce}|${Buffer.from(redirectParam).toString('base64')}`;
+
+    const params = new URLSearchParams({
       response_type: 'code',
-      client_id: db.oidcConfig.clientId,
-      redirect_uri: db.oidcConfig.redirectUri,
       scope: 'openid email profile',
-      state: state
+      client_id: provider.clientId,
+      redirect_uri: provider.redirectUri,
+      state
     });
 
-    res.redirect(`${authEndpoint}?${queryParams.toString()}`);
+    return c.redirect(`${authEndpoint}?${params.toString()}`);
   } catch (err) {
-    console.error('SSO discovery failed:', err);
-    res.redirect('/login.html?error=SSO+discovery+failed');
+    console.error('SSO initialization failed:', err);
+    return c.redirect(`/login?error=Failed+to+initialize+SSO+authentication`);
   }
 });
 
-// OIDC callback
-app.get('/auth/callback', async (req, res) => {
-  const { code, state } = req.query;
-  const db = readDb();
+app.get('/auth/callback', async (c) => {
+  const code = c.req.query('code');
+  const state = c.req.query('state');
 
-  if (!code) {
-    return res.redirect('/login.html?error=SSO+code+missing');
+  if (!code || !state) {
+    return c.redirect('/login?error=Invalid+OAuth+callback+parameters');
+  }
+
+  const parts = state.split('|');
+  const providerId = parts[0];
+  const db = readDb();
+  const provider = db.oidcProviders.find(p => p.id === providerId);
+  if (!provider) {
+    return c.redirect('/login?error=OIDC+provider+not+found');
   }
 
   try {
-    // Fetch OIDC configuration
-    const discoveryUrl = `${db.oidcConfig.issuer}/.well-known/openid-configuration`;
-    const discovery = await axios.get(discoveryUrl);
-    const tokenEndpoint = discovery.data.token_endpoint;
-    const userinfoEndpoint = discovery.data.userinfo_endpoint;
+    const discoveryUrl = `${provider.issuer}/.well-known/openid-configuration`;
+    const discRes = await fetch(discoveryUrl);
+    const discovery = await discRes.json();
+    const tokenEndpoint = discovery.token_endpoint;
+    const userinfoEndpoint = discovery.userinfo_endpoint;
 
-    // Exchange code for token
-    const tokenResponse = await axios.post(tokenEndpoint, new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: db.oidcConfig.redirectUri,
-      client_id: db.oidcConfig.clientId,
-      client_secret: db.oidcConfig.clientSecret
-    }).toString(), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    const tokenResponse = await fetch(tokenEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: provider.redirectUri,
+        client_id: provider.clientId,
+        client_secret: provider.clientSecret
+      })
     });
 
-    const accessToken = tokenResponse.data.access_token;
-    
-    // Fetch user info using access token
-    const userinfo = await axios.get(userinfoEndpoint, {
+    if (!tokenResponse.ok) {
+      throw new Error(`Token exchange failed: ${tokenResponse.statusText}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    const userinfoResponse = await fetch(userinfoEndpoint, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
+    const userinfo = await userinfoResponse.json();
 
-    const email = userinfo.data.email || userinfo.data.sub;
-    const userSession = { username: email, role: 'admin', oidc: true };
+    const email = userinfo.email || userinfo.sub;
+    const user = db.users.find(u => u.username.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      return c.redirect(`/login?error=User+${encodeURIComponent(email)}+not+registered+in+system`);
+    }
 
-    const token = jwt.sign(userSession, JWT_SECRET, { expiresIn: '8h' });
-    const cookieName = getSessionCookieName(req);
-    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
+    if (user.ssoEnabled && user.ssoProviderId && user.ssoProviderId !== provider.id) {
+      return c.redirect('/login?error=SSO+provider+mismatch+for+this+user');
+    }
 
-    res.cookie(cookieName, token, {
+    let targetRedirect = '/';
+    if (parts[2]) {
+      targetRedirect = Buffer.from(parts[2], 'base64').toString('utf-8');
+    }
+
+    if (user.twoFactorEnabled) {
+      const pendingPayload = { userId: user.id, username: user.username, pending2fa: true, exp: Math.floor(Date.now() / 1000) + 10 * 60 };
+      const pendingToken = await sign(pendingPayload, JWT_SECRET, 'HS256');
+      
+      const isHttps = c.req.header('x-forwarded-proto') === 'https';
+      setCookie(c, 'caddyui-pending2fa', pendingToken, {
+        httpOnly: true,
+        secure: isHttps,
+        sameSite: 'Lax',
+        maxAge: 10 * 60
+      });
+
+      return c.redirect(`/login-2fa?redirect=${encodeURIComponent(targetRedirect)}`);
+    }
+
+    const userSession = { username: user.username, role: user.role, exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60 };
+    const token = await sign(userSession, JWT_SECRET, 'HS256');
+    const cookieName = getSessionCookieName(c);
+    const isHttps = c.req.header('x-forwarded-proto') === 'https';
+
+    setCookie(c, cookieName, token, {
       httpOnly: true,
       secure: isHttps,
-      sameSite: 'lax',
-      maxAge: 8 * 60 * 60 * 1000 // 8 hours
+      sameSite: 'Lax',
+      maxAge: 8 * 60 * 60
     });
 
-    // Parse redirect URI from state
-    let targetRedirect = '/';
-    if (state) {
-      const parts = state.split('|');
-      if (parts[1]) {
-        targetRedirect = Buffer.from(parts[1], 'base64').toString('utf-8');
-      }
-    }
-
-    res.redirect(targetRedirect);
+    return c.redirect(targetRedirect);
   } catch (err) {
     console.error('SSO Authentication failed:', err);
-    res.redirect('/login.html?error=SSO+authentication+failed');
+    return c.redirect(`/login?error=${encodeURIComponent(err.message)}`);
   }
 });
 
-// Logout
-app.post('/auth/logout', (req, res) => {
-  const cookieName = getSessionCookieName(req);
-  res.clearCookie(cookieName);
-  res.clearCookie('caddyui-csrf');
-  res.json({ success: true });
+app.post('/auth/logout', (c) => {
+  const cookieName = getSessionCookieName(c);
+  deleteCookie(c, cookieName);
+  return c.json({ success: true });
 });
 
-// --- FORWARD AUTH GATEKEEPER ---
-app.get('/forward-auth', (req, res) => {
-  const cookieName = getSessionCookieName(req);
-  const token = req.cookies[cookieName];
+app.get('/forward-auth', async (c) => {
+  const cookieName = getSessionCookieName(c);
+  const token = getCookie(c, cookieName);
 
-  // Original request metadata forwarded by Caddy
-  const originalHost = req.headers['x-forwarded-host'] || req.headers['host'];
-  const originalUri = req.headers['x-forwarded-uri'] || '/';
-  const originalMethod = req.headers['x-forwarded-method'] || 'GET';
+  const originalHost = c.req.header('x-forwarded-host');
+  const originalUri = c.req.header('x-forwarded-uri') || '/';
+  const originalMethod = c.req.header('x-forwarded-method') || 'GET';
+
+  const db = readDb();
+  const matchedProxy = db.proxies.find(p => p.host === originalHost);
 
   if (!token) {
-    return handleUnauthorized(req, res, originalHost, originalUri, originalMethod);
+    return handleUnauthorized(c, originalHost, originalUri, originalMethod, matchedProxy);
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return handleUnauthorized(req, res, originalHost, originalUri, originalMethod);
-    }
-    // Authenticated successfully! Return 200 OK to tell Caddy to pass request through
-    res.setHeader('X-Auth-User', user.username);
-    res.status(200).send('OK');
-  });
+  try {
+    const user = await verify(token, JWT_SECRET, 'HS256');
+    c.header('X-Auth-User', user.username);
+    return c.text('OK');
+  } catch (err) {
+    return handleUnauthorized(c, originalHost, originalUri, originalMethod, matchedProxy);
+  }
 });
 
-function handleUnauthorized(req, res, host, uri, method) {
-  // If it's a browser request (HTML view), redirect to SSO/login page
-  const accept = req.headers['accept'] || '';
+async function handleUnauthorized(c, host, uri, method, proxy) {
+  const accept = c.req.header('accept') || '';
   if (accept.includes('text/html') && method === 'GET') {
-    const originalUrl = `http${req.secure || req.headers['x-forwarded-proto'] === 'https' ? 's' : ''}://${host}${uri}`;
+    const isHttps = c.req.header('x-forwarded-proto') === 'https';
+    const originalUrl = `http${isHttps ? 's' : ''}://${host}${uri}`;
     const db = readDb();
     
-    // Redirect to OIDC SSO auth if enabled, otherwise fallback login page
-    if (db.oidcConfig.enabled) {
-      return res.redirect(`/auth/sso?redirect=${encodeURIComponent(originalUrl)}`);
+    let provider = null;
+    if (proxy && proxy.ssoProviderId) {
+      provider = db.oidcProviders.find(p => p.id === proxy.ssoProviderId && p.enabled);
+    }
+    if (!provider) {
+      provider = db.oidcProviders.find(p => p.enabled);
+    }
+
+    if (provider) {
+      return c.redirect(`/auth/sso?providerId=${provider.id}&redirect=${encodeURIComponent(originalUrl)}`);
     } else {
-      // Find the Caddy UI public URL (we assume we can redirect to this service's login page)
-      // Since Caddy UI is accessible at host/login.html if matched, or we redirect to Caddy UI's port/domain
-      return res.redirect(`/login.html?redirect=${encodeURIComponent(originalUrl)}`);
+      return c.redirect(`/login?redirect=${encodeURIComponent(originalUrl)}`);
     }
   }
 
-  // API/Ajax requests fail with 401
-  res.status(401).send('Unauthorized');
+  return c.text('Unauthorized', 401);
 }
 
-// Serve Frontend Files
-app.use(express.static(path.join(__dirname, 'public')));
+// Route to serve login page
+app.get('/login', async (c) => {
+  const cookieName = getSessionCookieName(c);
+  const token = getCookie(c, cookieName);
+  if (token) {
+    try {
+      await verify(token, JWT_SECRET, 'HS256');
+      return c.redirect('/');
+    } catch (err) {
+      deleteCookie(c, cookieName);
+    }
+  }
+  return c.html(fs.readFileSync(path.join(__dirname, 'public', 'login.html'), 'utf-8'));
+});
+
+// Redirect old login.html URL to clean /login URL
+app.get('/login.html', (c) => {
+  const query = c.req.url.split('?')[1];
+  return c.redirect(`/login${query ? '?' + query : ''}`, 301);
+});
+
+// Route to serve 2FA page
+app.get('/login-2fa', (c) => {
+  const pendingToken = getCookie(c, 'caddyui-pending2fa');
+  if (!pendingToken) {
+    return c.redirect('/login');
+  }
+  return c.html(fs.readFileSync(path.join(__dirname, 'public', 'login-2fa.html'), 'utf-8'));
+});
+
+// Serve static assets
+app.use('/*', serveStatic({ root: './public' }));
 
 // Fallback to serve index.html for dashboard routing
-app.get('*', (req, res, next) => {
-  // Exclude API and Auth routes
-  if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path === '/forward-auth') {
-    return next();
+app.get('*', async (c, next) => {
+  const p = c.req.path;
+  if (p.startsWith('/api') || p.startsWith('/auth') || p === '/forward-auth' || p === '/login' || p === '/login-2fa') {
+    return await next();
   }
-  
-  // Verify token before serving index.html
-  const cookieName = getSessionCookieName(req);
-  const token = req.cookies[cookieName];
+
+  const cookieName = getSessionCookieName(c);
+  const token = getCookie(c, cookieName);
   if (!token) {
-    return res.redirect('/login.html');
+    return c.redirect('/login');
   }
 
-  jwt.verify(token, JWT_SECRET, (err) => {
-    if (err) {
-      res.clearCookie(cookieName);
-      return res.redirect('/login.html');
-    }
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  });
+  try {
+    await verify(token, JWT_SECRET, 'HS256');
+    return c.html(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf-8'));
+  } catch (err) {
+    deleteCookie(c, cookieName);
+    return c.redirect('/login');
+  }
 });
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Internal Server Error' });
-});
+// Start Bun server
+(async () => {
+  await initDb();
+})();
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`Caddy UI is running on port ${PORT}`);
-});
+export default {
+  port: PORT,
+  fetch: app.fetch
+};
