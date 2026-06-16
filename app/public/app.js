@@ -589,6 +589,7 @@ document.getElementById('admin-credentials-form').addEventListener('submit', asy
 async function loadSettings() {
     await loadAdminCredentials();
     await loadDashboardAuthConfig();
+    await renderDashboard2FASettings();
 }
 
 async function loadAdminCredentials() {
@@ -679,6 +680,46 @@ document.getElementById('dashboard-auth-form').addEventListener('submit', async 
     } catch (err) {
         alert('Failed to save dashboard auth settings');
     }
+});
+
+// --- Dashboard Personal 2FA Actions & Rendering ---
+async function renderDashboard2FASettings() {
+    await displayUserSession();
+    
+    const section = document.getElementById('dash-2fa-section');
+    if (!state.user || state.user.ssoEnabled) {
+        section.style.display = 'none';
+        return;
+    }
+    
+    section.style.display = 'block';
+    const statusText = document.getElementById('dash-2fa-status-text');
+    const statusContainer = document.getElementById('dash-2fa-status-container');
+    const btn = document.getElementById('dash-2fa-btn');
+    
+    if (state.user.twoFactorEnabled) {
+        statusContainer.style.borderLeftColor = 'var(--success)';
+        statusText.style.color = 'var(--success)';
+        statusText.textContent = 'Two-Factor Authentication (2FA) is active. Your account is protected with an extra layer of security.';
+        btn.textContent = 'Disable 2FA';
+        btn.className = 'btn btn-danger';
+    } else {
+        statusContainer.style.borderLeftColor = 'var(--text-muted)';
+        statusText.style.color = 'var(--text-muted)';
+        statusText.textContent = 'Two-Factor Authentication (2FA) is inactive. We recommend enabling 2FA to secure your credentials login.';
+        btn.textContent = 'Setup 2FA';
+        btn.className = 'btn btn-secondary';
+    }
+}
+
+document.getElementById('dash-2fa-btn').addEventListener('click', async () => {
+    if (!state.user) return;
+    if (state.user.twoFactorEnabled) {
+        await disableTwoFactor(state.user);
+    } else {
+        await setupTwoFactor(state.user);
+    }
+    await renderDashboard2FASettings();
 });
 
 // --- Sync Config Manually ---
@@ -1068,8 +1109,8 @@ function renderUserList() {
             mfaBtn.textContent = 'Disable 2FA';
             mfaBtn.addEventListener('click', () => disableTwoFactor(user));
         } else {
-            mfaBtn.textContent = 'Setup 2FA';
-            mfaBtn.addEventListener('click', () => setupTwoFactor(user));
+            mfaBtn.textContent = 'Enable 2FA';
+            mfaBtn.addEventListener('click', () => forceEnableTwoFactor(user));
         }
         actions.appendChild(mfaBtn);
 
@@ -1254,6 +1295,9 @@ async function disableTwoFactor(user) {
         });
         if (res && res.ok) {
             alert('2FA has been disabled.');
+            if (state.user && user.id === state.user.id) {
+                await renderDashboard2FASettings();
+            }
             loadUsersData();
         } else {
             const err = await res.json();
@@ -1262,6 +1306,26 @@ async function disableTwoFactor(user) {
     } catch (err) {
         console.error(err);
         alert('Failed to disable 2FA.');
+    }
+}
+
+async function forceEnableTwoFactor(user) {
+    if (!confirm(`Are you sure you want to force-enable 2FA for ${user.username}? The user will need the secret key to log in.`)) return;
+    try {
+        const res = await secureFetch(`/api/users/${user.id}/2fa/force-enable`, {
+            method: 'POST'
+        });
+        if (res && res.ok) {
+            const data = await res.json();
+            alert(`2FA has been enabled for ${user.username}!\n\nIMPORTANT: Share this secret key with the user so they can configure their authenticator app:\n${data.secret}`);
+            loadUsersData();
+        } else {
+            const err = await res.json();
+            alert(`Error: ${err.error || 'Failed to force-enable 2FA'}`);
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Failed to force-enable 2FA.');
     }
 }
 
@@ -1278,6 +1342,9 @@ document.getElementById('mfa-verify-form').addEventListener('submit', async (e) 
         if (res && res.ok) {
             alert('Two-Factor Authentication enabled successfully!');
             document.getElementById('mfa-modal').classList.remove('open');
+            if (state.user && currentSetupUserId === state.user.id) {
+                await renderDashboard2FASettings();
+            }
             loadUsersData();
         } else {
             const err = await res.json();

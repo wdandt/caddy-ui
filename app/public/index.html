@@ -91,44 +91,59 @@
 
             <!-- PANEL: SSO SETTINGS -->
             <section id="panel-sso" class="content-section hidden">
-                <div style="max-width: 600px;">
-                    <!-- Admin Credentials Settings -->
-                    <div class="glass" style="padding: 2rem; border-radius: var(--radius-md); margin-bottom: 2rem;">
-                        <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Account Credentials</h3>
-                        <form id="admin-credentials-form">
-                            <div class="form-group">
-                                <label for="admin-username">Username</label>
-                                <input type="text" id="admin-username" required placeholder="e.g. admin" readonly>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="admin-password">New Password</label>
-                                <input type="password" id="admin-password" placeholder="•••••••••••• (Leave empty to keep current)">
-                            </div>
+                <div class="settings-grid">
+                    <!-- Left Column: Credentials and 2FA Settings -->
+                    <div style="display: flex; flex-direction: column; gap: 2rem;">
+                        <!-- Admin Credentials Settings -->
+                        <div class="glass" style="padding: 2rem; border-radius: var(--radius-md);">
+                            <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Account Credentials</h3>
+                            <form id="admin-credentials-form">
+                                <div class="form-group">
+                                    <label for="admin-username">Username</label>
+                                    <input type="text" id="admin-username" required placeholder="e.g. admin" readonly>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="admin-password">New Password</label>
+                                    <input type="password" id="admin-password" placeholder="•••••••••••• (Leave empty to keep current)">
+                                </div>
 
-                            <button type="submit" class="btn btn-primary">Save Credentials</button>
-                        </form>
+                                <button type="submit" class="btn btn-primary">Save Credentials</button>
+                            </form>
+                        </div>
+
+                        <!-- Two-Factor Authentication Settings -->
+                        <div class="glass" id="dash-2fa-section" style="padding: 2rem; border-radius: var(--radius-md); display: none;">
+                            <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Two-Factor Authentication (2FA)</h3>
+                            <div id="dash-2fa-status-container" style="margin-bottom: 1.5rem; padding: 1rem; border-radius: var(--radius-sm); border-left: 4px solid var(--border-color); background: rgba(255,255,255,0.05);">
+                                <p id="dash-2fa-status-text" style="margin: 0; font-size: 0.95rem; line-height: 1.5;"></p>
+                            </div>
+                            <button id="dash-2fa-btn" class="btn btn-secondary"></button>
+                        </div>
                     </div>
 
-                    <!-- Dashboard Authentication Settings -->
-                    <div class="glass" style="padding: 2rem; border-radius: var(--radius-md);">
-                        <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Dashboard Authentication</h3>
-                        <form id="dashboard-auth-form">
-                            <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem;">
-                                <input type="checkbox" id="dash-sso-only" style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;">
-                                <label for="dash-sso-only" style="margin: 0; font-size: 0.95rem; font-weight: 500; cursor: pointer; user-select: none;">
-                                    Restrict Login to SSO Only (Disable credentials login for normal users)
-                                </label>
-                            </div>
-                            <div class="form-group" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
-                                <label style="font-weight: 600; margin-bottom: 0.5rem; display: block;">Allowed SSO Providers for Dashboard Login</label>
-                                <div id="dash-allowed-providers-list" style="display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; background: rgba(10, 14, 25, 0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); max-height: 200px; overflow-y: auto;">
-                                    <!-- Dynamic checkboxes -->
+                    <!-- Right Column: Dashboard Authentication Config -->
+                    <div style="display: flex; flex-direction: column; gap: 2rem;">
+                        <!-- Dashboard Authentication Settings -->
+                        <div class="glass" style="padding: 2rem; border-radius: var(--radius-md);">
+                            <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Dashboard Authentication</h3>
+                            <form id="dashboard-auth-form">
+                                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem;">
+                                    <input type="checkbox" id="dash-sso-only" style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;">
+                                    <label for="dash-sso-only" style="margin: 0; font-size: 0.95rem; font-weight: 500; cursor: pointer; user-select: none;">
+                                        Restrict Login to SSO Only (Disable credentials login for normal users)
+                                    </label>
                                 </div>
-                            </div>
+                                <div class="form-group" style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
+                                    <label style="font-weight: 600; margin-bottom: 0.5rem; display: block;">Allowed SSO Providers for Dashboard Login</label>
+                                    <div id="dash-allowed-providers-list" style="display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem; background: rgba(10, 14, 25, 0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); max-height: 200px; overflow-y: auto;">
+                                        <!-- Dynamic checkboxes -->
+                                    </div>
+                                </div>
 
-                            <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Auth Settings</button>
-                        </form>
+                                 <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Auth Settings</button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </section>

@@ -442,8 +442,19 @@ app.get('/api/csrf', (c) => {
 });
 
 app.get('/api/me', authenticateToken, (c) => {
-  const user = c.get('user');
-  return c.json({ username: user.username });
+  const sessionUser = c.get('user');
+  const db = readDb();
+  const user = db.users.find(u => u.username.toLowerCase() === sessionUser.username.toLowerCase());
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  return c.json({
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    ssoEnabled: user.ssoEnabled,
+    twoFactorEnabled: user.twoFactorEnabled
+  });
 });
 
 app.get('/api/oidc-providers', authenticateToken, (c) => {
@@ -625,6 +636,21 @@ app.delete('/api/users/:id', authenticateToken, csrfProtection, (c) => {
   db.users = db.users.filter(u => u.id !== id);
   writeDb(db);
   return c.json({ message: 'User deleted successfully' });
+});
+
+app.post('/api/users/:id/2fa/force-enable', authenticateToken, csrfProtection, (c) => {
+  const id = c.req.param('id');
+  const db = readDb();
+  const user = db.users.find(u => u.id === id);
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  const secret = generateTotpSecret();
+  user.twoFactorEnabled = true;
+  user.twoFactorSecret = secret;
+  delete user.twoFactorTempSecret;
+  writeDb(db);
+  return c.json({ success: true, secret });
 });
 
 app.post('/api/users/:id/2fa/setup', authenticateToken, csrfProtection, (c) => {
