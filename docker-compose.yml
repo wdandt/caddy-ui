@@ -1,0 +1,68 @@
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    container_name: caddyui-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      CADDY_ADMIN: 0.0.0.0:2019
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+    command: ["sh", "-c", "mkdir -p /config/caddy && [ -f /config/caddy/autosave.json ] || echo '{}' > /config/caddy/autosave.json && exec caddy run --config /config/caddy/autosave.json --resume --adapter json"]
+    networks:
+      - caddyui
+  
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    restart: unless-stopped
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - caddyui
+
+  caddy-ui:
+    build: ./app
+    container_name: caddyui-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - caddyui_data:/app/data
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      # Fallback admin credentials
+      - ADMIN_USER=admin
+      - ADMIN_PASS=caddyui_admin_secure_pass_123
+      # OIDC/SSO Configuration
+      - OIDC_ISSUER=
+      - OIDC_CLIENT_ID=
+      - OIDC_CLIENT_SECRET=
+      - OIDC_REDIRECT_URI=
+      # JWT Encryption Secret (will fallback to auto-generated if empty)
+      - JWT_SECRET=
+    deploy:
+      resources:
+        limits:
+          cpus: '0.20'
+          memory: 64M
+    networks:
+      - caddyui
+
+
+
+volumes:
+  caddy_data:
+  caddy_config:
+  caddyui_data:
+
+networks:
+  caddyui:
+    driver: bridge

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Caddy UI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="background-decor">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="login-card glass">
+        <div class="login-header">
+            <div class="logo-icon">🎛️</div>
+            <h1>Caddy UI</h1>
+            <p>Reverse Proxy & SSO Dashboard</p>
+        </div>
+
+        <div id="error-alert" class="alert alert-danger hidden"></div>
+        <div id="info-alert" class="alert alert-info hidden"></div>
+
+        <!-- OIDC SSO Login Button (Dynamic) -->
+        <div id="sso-container" class="hidden">
+            <button id="sso-btn" class="btn btn-primary btn-block">
+                <span class="icon">🔑</span> Login with SSO
+            </button>
+            <div class="divider"><span>or use credentials</span></div>
+        </div>
+
+        <!-- Normal Credentials Form -->
+        <form id="login-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required placeholder="Enter username" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required placeholder="Enter password" autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-secondary btn-block">Sign In</button>
+        </form>
+    </div>
+
+    <script>
+        // Parse query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirectUrl = urlParams.get('redirect') || '/';
+        const errorParam = urlParams.get('error');
+
+        const errorAlert = document.getElementById('error-alert');
+        const infoAlert = document.getElementById('info-alert');
+
+        if (errorParam) {
+            errorAlert.textContent = decodeURIComponent(errorParam);
+            errorAlert.classList.remove('hidden');
+        }
+
+        if (redirectUrl !== '/') {
+            infoAlert.textContent = 'Please log in to access the requested site.';
+            infoAlert.classList.remove('hidden');
+        }
+
+        // Fetch auth configuration
+        fetch('/auth/config')
+            .then(res => res.json())
+            .then(data => {
+                if (data.ssoEnabled) {
+                    const ssoContainer = document.getElementById('sso-container');
+                    ssoContainer.classList.remove('hidden');
+                    
+                    const ssoBtn = document.getElementById('sso-btn');
+                    ssoBtn.addEventListener('click', () => {
+                        window.location.href = `/auth/sso?redirect=${encodeURIComponent(redirectUrl)}`;
+                    });
+                }
+            })
+            .catch(err => console.error('Failed to load auth config:', err));
+
+        // Submit login form
+        const loginForm = document.getElementById('login-form');
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorAlert.classList.add('hidden');
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    window.location.href = redirectUrl;
+                } else {
+                    errorAlert.textContent = data.error || 'Authentication failed';
+                    errorAlert.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorAlert.textContent = 'Server connection error';
+                errorAlert.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
