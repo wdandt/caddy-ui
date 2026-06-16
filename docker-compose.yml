@@ -39,15 +39,15 @@ services:
       - PORT=3000
       - NODE_ENV=production
       # Fallback admin credentials
-      - ADMIN_USER=admin
-      - ADMIN_PASS=caddyui_admin_secure_pass_123
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-caddyui_admin_secure_pass_123}
       # OIDC/SSO Configuration
-      - OIDC_ISSUER=
-      - OIDC_CLIENT_ID=
-      - OIDC_CLIENT_SECRET=
-      - OIDC_REDIRECT_URI=
+      - OIDC_ISSUER=${OIDC_ISSUER:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
       # JWT Encryption Secret (will fallback to auto-generated if empty)
-      - JWT_SECRET=
+      - JWT_SECRET=${JWT_SECRET:-}
     deploy:
       resources:
         limits:

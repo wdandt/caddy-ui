@@ -30,6 +30,12 @@ function readDb() {
   const defaultAdminPass = process.env.ADMIN_PASS || 'caddyui_admin_secure_pass_123';
   const defaultAdminPassHash = bcrypt.hashSync(defaultAdminPass, 10);
 
+  const defaultOidcIssuer = process.env.OIDC_ISSUER || '';
+  const defaultOidcClientId = process.env.OIDC_CLIENT_ID || '';
+  const defaultOidcClientSecret = process.env.OIDC_CLIENT_SECRET || '';
+  const defaultOidcRedirectUri = process.env.OIDC_REDIRECT_URI || '';
+  const defaultOidcEnabled = !!(defaultOidcIssuer && defaultOidcClientId);
+
   if (!fs.existsSync(DB_PATH)) {
     const defaultDb = {
       instances: [
@@ -43,11 +49,11 @@ function readDb() {
       ],
       proxies: [],
       oidcConfig: {
-        issuer: '',
-        clientId: '',
-        clientSecret: '',
-        redirectUri: '',
-        enabled: false
+        issuer: defaultOidcIssuer,
+        clientId: defaultOidcClientId,
+        clientSecret: defaultOidcClientSecret,
+        redirectUri: defaultOidcRedirectUri,
+        enabled: defaultOidcEnabled
       },
       adminCredentials: {
         username: defaultAdminUser,
@@ -60,11 +66,26 @@ function readDb() {
   try {
     const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
     // Ensure adminCredentials exists
+    let modified = false;
     if (!db.adminCredentials) {
       db.adminCredentials = {
         username: defaultAdminUser,
         passwordHash: defaultAdminPassHash
       };
+      modified = true;
+    }
+    // Ensure oidcConfig exists
+    if (!db.oidcConfig) {
+      db.oidcConfig = {
+        issuer: defaultOidcIssuer,
+        clientId: defaultOidcClientId,
+        clientSecret: defaultOidcClientSecret,
+        redirectUri: defaultOidcRedirectUri,
+        enabled: defaultOidcEnabled
+      };
+      modified = true;
+    }
+    if (modified) {
       fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf-8');
     }
     return db;
@@ -82,11 +103,11 @@ function readDb() {
       ],
       proxies: [],
       oidcConfig: {
-        issuer: '',
-        clientId: '',
-        clientSecret: '',
-        redirectUri: '',
-        enabled: false
+        issuer: defaultOidcIssuer,
+        clientId: defaultOidcClientId,
+        clientSecret: defaultOidcClientSecret,
+        redirectUri: defaultOidcRedirectUri,
+        enabled: defaultOidcEnabled
       },
       adminCredentials: {
         username: defaultAdminUser,
