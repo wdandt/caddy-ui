@@ -1357,6 +1357,33 @@ app.get('/login-2fa', (c) => {
   return c.html(fs.readFileSync(path.join(__dirname, 'public', 'login-2fa.html'), 'utf-8'));
 });
 
+// Protect root dashboard paths
+app.get('/', async (c) => {
+  const cookieName = getSessionCookieName(c);
+  const token = getCookie(c, cookieName);
+  if (!token) {
+    return c.redirect('/login');
+  }
+  try {
+    await verify(token, JWT_SECRET, 'HS256');
+    return c.html(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf-8'));
+  } catch (err) {
+    deleteCookie(c, cookieName);
+    return c.redirect('/login');
+  }
+});
+
+app.get('/index.html', (c) => {
+  const query = c.req.url.split('?')[1];
+  return c.redirect(`/${query ? '?' + query : ''}`, 301);
+});
+
+// Redirect old login-2fa.html URL to clean /login-2fa URL
+app.get('/login-2fa.html', (c) => {
+  const query = c.req.url.split('?')[1];
+  return c.redirect(`/login-2fa${query ? '?' + query : ''}`, 301);
+});
+
 // Serve static assets
 app.use('/*', serveStatic({ root: './public' }));
 
