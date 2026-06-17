@@ -12,7 +12,7 @@ A lightweight, modern Web UI Dashboard and Single Sign-On (SSO) Forward Auth Pro
 *   **⚙️ UI Configurable Credentials**: Change the admin username and password directly from the Settings tab, stored securely using `bcryptjs` hashing.
 *   **🛡️ Route Protection**: Toggle SSO protection on any proxy route to restrict access to authenticated users via Caddy's `forward_auth` middleware.
 *   **✨ Modern Glassmorphic Dashboard**: A premium, responsive interface featuring live status indicators, server latency checks, and visual route overviews.
-*   **🔒 Security Hardened**: Built with CSRF protection (double submit cookie) and secure HTTP-Only session cookies (`__Host-` prefixed for production).
+*   **🔒 Security Hardened**: Built with CSRF protection (double submit cookie), secure HTTP-Only session cookies (`__Host-` prefixed for production), and server-side route guards on dashboard access (`/` and `/index.html`) to prevent visual UI leakage/flashing for unauthenticated users.
 
 ---
 
@@ -83,6 +83,23 @@ docker compose up -d --build
 ```
 
 Access the dashboard by navigating to `http://localhost:3000` (or your configured domain).
+
+### 🔄 Updating & Redeploying on Production
+
+When pulling new updates, applying security patches, or modifying files:
+
+1. **Redeploy/Rebuild the Dashboard Service Only** (Zero-downtime for Caddy):
+   ```bash
+   docker compose up -d --build caddy-ui
+   ```
+   This rebuilds the dashboard Docker image and restarts the container without affecting Caddy's operations.
+
+2. **Full Stack Redeployment**:
+   If there are changes to `docker-compose.yml` or the custom Caddy Dockerfile:
+   ```bash
+   docker compose down
+   docker compose up -d --build
+   ```
 
 ---
 
