@@ -1,8 +1,14 @@
-FROM caddy:builder AS builder
+FROM alpine:latest AS downloader
 
-RUN xcaddy build \
-    --with github.com/caddy-dns/cloudflare
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
+RUN apk add --no-cache curl
+
+# Tải trực tiếp binary Caddy đã tích hợp plugin Cloudflare DNS
+RUN curl -L "https://caddyserver.com/api/download?os=${TARGETOS}&arch=${TARGETARCH}&p=github.com/caddy-dns/cloudflare" -o /usr/bin/caddy \
+    && chmod +x /usr/bin/caddy
 
 FROM caddy:alpine
 
-COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+COPY --from=downloader /usr/bin/caddy /usr/bin/caddy
