@@ -37,15 +37,122 @@ async function secureFetch(url, options = {}) {
         options.body = JSON.stringify(options.body);
     }
 
-    const response = await fetch(url, options);
-    
-    if (response.status === 401) {
-        // Session expired, redirect to login
-        window.location.href = '/login';
+    try {
+        const response = await fetch(url, options);
+        
+        if (response.status === 401) {
+            // Session expired, redirect to login
+            window.location.href = '/login';
+            return null;
+        }
+
+        // --- Common Error/Success Handling ---
+        if (!options.silent) {
+            const clone = response.clone();
+            clone.json().then(data => {
+                if (!response.ok) {
+                    showToast(data.error || `Error: ${response.statusText}`, 'error');
+                } else if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
+                    if (data.message || data.successMessage) {
+                        showToast(data.message || data.successMessage, 'success');
+                    } else if (data.success || data.synced || data.id || data.proxy) {
+                        showToast('Operation completed successfully', 'success');
+                    }
+                }
+            }).catch(() => {
+                if (!response.ok) showToast(`Error: ${response.statusText}`, 'error');
+            });
+        }
+        
+        return response;
+    } catch (err) {
+        if (!options.silent) showToast('Network Error: ' + err.message, 'error');
         return null;
     }
-    
-    return response;
+}
+
+// --- Toast Notification ---
+window.showToast = function(message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.style.position = 'fixed';
+        container.style.bottom = '20px';
+        container.style.right = '20px';
+        container.style.zIndex = '9999';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.gap = '10px';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.style.minWidth = '250px';
+    toast.style.padding = '12px 20px';
+    toast.style.borderRadius = '8px';
+    toast.style.color = '#fff';
+    toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    toast.style.animation = 'slideIn 0.3s ease-out forwards';
+    toast.style.display = 'flex';
+    toast.style.justifyContent = 'space-between';
+    toast.style.alignItems = 'center';
+    toast.style.fontFamily = 'system-ui, sans-serif';
+    toast.style.fontSize = '0.9rem';
+
+    if (type === 'success') {
+        toast.style.backgroundColor = '#10b981';
+    } else if (type === 'error') {
+        toast.style.backgroundColor = '#ef4444';
+    } else {
+        toast.style.backgroundColor = '#3b82f6';
+    }
+
+    const text = document.createElement('span');
+    text.textContent = message;
+    toast.appendChild(text);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.background = 'none';
+    closeBtn.style.border = 'none';
+    closeBtn.style.color = '#fff';
+    closeBtn.style.fontSize = '1.2rem';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.marginLeft = '15px';
+    closeBtn.onclick = () => {
+        toast.style.animation = 'fadeOut 0.3s ease-out forwards';
+        setTimeout(() => toast.remove(), 300);
+    };
+    toast.appendChild(closeBtn);
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.style.animation = 'fadeOut 0.3s ease-out forwards';
+            setTimeout(() => {
+                if (toast.parentElement) toast.remove();
+            }, 300);
+        }
+    }, 5000);
+};
+
+if (!document.getElementById('toast-styles')) {
+    const style = document.createElement('style');
+    style.id = 'toast-styles';
+    style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    `;
+    document.head.appendChild(style);
 }
 
 // --- DOM Helpers ---
@@ -484,7 +591,7 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
             alert(`Error: ${err.error}`);
         }
     } catch (err) {
-        alert('Server request failed.');
+        // alert(Server request failed);
     }
 });
 
@@ -1239,7 +1346,7 @@ document.getElementById('user-form').addEventListener('submit', async (e) => {
             alert(`Error: ${err.error}`);
         }
     } catch (err) {
-        alert('Server request failed.');
+        // alert(Server request failed);
     }
 });
 
@@ -1501,7 +1608,7 @@ document.getElementById('provider-form').addEventListener('submit', async (e) =>
             alert(`Error: ${err.error}`);
         }
     } catch (err) {
-        alert('Server request failed.');
+        // alert(Server request failed);
     }
 });
 

@@ -261,7 +261,9 @@ const authenticateToken = async (c, next) => {
     c.set('user', decoded);
     await next();
   } catch (err) {
-    deleteCookie(c, cookieName);
+    const cookieName = getSessionCookieName(c);
+    const isHttps = c.req.header('x-forwarded-proto') === 'https';
+    deleteCookie(c, cookieName, { path: '/', secure: isHttps });
     return c.json({ error: 'Session expired or invalid' }, 401);
   }
 };
@@ -434,6 +436,7 @@ app.get('/api/csrf', (c) => {
   const token = crypto.randomBytes(32).toString('hex');
   const isHttps = c.req.header('x-forwarded-proto') === 'https';
   setCookie(c, 'caddyui-csrf', token, {
+    path: '/',
     httpOnly: false,
     secure: isHttps,
     sameSite: 'Lax'
@@ -1039,6 +1042,7 @@ app.post('/auth/login', async (c) => {
 
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
     setCookie(c, 'caddyui-pending2fa', pendingToken, {
+      path: '/',
       httpOnly: true,
       secure: isHttps,
       sameSite: 'Lax',
@@ -1055,6 +1059,7 @@ app.post('/auth/login', async (c) => {
   const isHttps = c.req.header('x-forwarded-proto') === 'https';
 
   setCookie(c, cookieName, token, {
+    path: '/',
     httpOnly: true,
     secure: isHttps,
     sameSite: 'Lax',
@@ -1078,14 +1083,14 @@ app.post('/auth/verify-2fa', async (c) => {
   try {
     const decoded = await verify(pendingToken, JWT_SECRET, 'HS256');
     if (!decoded.pending2fa) {
-      deleteCookie(c, 'caddyui-pending2fa');
+      deleteCookie(c, 'caddyui-pending2fa', { path: '/', secure: isHttps });
       return c.json({ error: 'Invalid or expired 2FA session' }, 401);
     }
 
     const db = readDb();
     const user = db.users.find(u => u.id === decoded.userId);
     if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
-      deleteCookie(c, 'caddyui-pending2fa');
+      deleteCookie(c, 'caddyui-pending2fa', { path: '/', secure: isHttps });
       return c.json({ error: '2FA is not enabled for this user' }, 400);
     }
 
@@ -1100,8 +1105,9 @@ app.post('/auth/verify-2fa', async (c) => {
     const cookieName = getSessionCookieName(c);
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
 
-    deleteCookie(c, 'caddyui-pending2fa');
+    deleteCookie(c, 'caddyui-pending2fa', { path: '/', secure: isHttps });
     setCookie(c, cookieName, token, {
+      path: '/',
       httpOnly: true,
       secure: isHttps,
       sameSite: 'Lax',
@@ -1110,7 +1116,7 @@ app.post('/auth/verify-2fa', async (c) => {
 
     return c.json({ success: true, redirect: '/' });
   } catch (err) {
-    deleteCookie(c, 'caddyui-pending2fa');
+    deleteCookie(c, 'caddyui-pending2fa', { path: '/', secure: c.req.header('x-forwarded-proto') === 'https' });
     return c.json({ error: 'Invalid or expired 2FA session' }, 401);
   }
 });
@@ -1244,6 +1250,7 @@ app.get('/auth/callback', async (c) => {
       
       const isHttps = c.req.header('x-forwarded-proto') === 'https';
       setCookie(c, 'caddyui-pending2fa', pendingToken, {
+        path: '/',
         httpOnly: true,
         secure: isHttps,
         sameSite: 'Lax',
@@ -1259,6 +1266,7 @@ app.get('/auth/callback', async (c) => {
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
 
     setCookie(c, cookieName, token, {
+      path: '/',
       httpOnly: true,
       secure: isHttps,
       sameSite: 'Lax',
@@ -1274,7 +1282,8 @@ app.get('/auth/callback', async (c) => {
 
 app.post('/auth/logout', (c) => {
   const cookieName = getSessionCookieName(c);
-  deleteCookie(c, cookieName);
+  const isHttps = c.req.header('x-forwarded-proto') === 'https';
+  deleteCookie(c, cookieName, { path: '/', secure: isHttps });
   return c.json({ success: true });
 });
 
@@ -1336,7 +1345,8 @@ app.get('/login', async (c) => {
       await verify(token, JWT_SECRET, 'HS256');
       return c.redirect('/');
     } catch (err) {
-      deleteCookie(c, cookieName);
+      const isHttps = c.req.header('x-forwarded-proto') === 'https';
+      deleteCookie(c, cookieName, { path: '/', secure: isHttps });
     }
   }
   return c.html(fs.readFileSync(path.join(__dirname, 'public', 'login.html'), 'utf-8'));
@@ -1368,7 +1378,8 @@ app.get('/', async (c) => {
     await verify(token, JWT_SECRET, 'HS256');
     return c.html(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf-8'));
   } catch (err) {
-    deleteCookie(c, cookieName);
+    const isHttps = c.req.header('x-forwarded-proto') === 'https';
+    deleteCookie(c, cookieName, { path: '/', secure: isHttps });
     return c.redirect('/login');
   }
 });
@@ -1404,7 +1415,8 @@ app.get('*', async (c, next) => {
     await verify(token, JWT_SECRET, 'HS256');
     return c.html(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf-8'));
   } catch (err) {
-    deleteCookie(c, cookieName);
+    const isHttps = c.req.header('x-forwarded-proto') === 'https';
+    deleteCookie(c, cookieName, { path: '/', secure: isHttps });
     return c.redirect('/login');
   }
 });
