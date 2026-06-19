@@ -435,13 +435,14 @@ function renderServerSelectOptions() {
 // --- Data Fetching Operations ---
 async function loadDashboardData() {
     try {
-        const instancesRes = await secureFetch('/api/instances');
+        const [instancesRes, proxiesRes, providersRes] = await Promise.all([
+            secureFetch('/api/instances'),
+            secureFetch('/api/proxies'),
+            secureFetch('/api/oidc-providers')
+        ]);
+        
         if (instancesRes) state.instances = await instancesRes.json();
-        
-        const proxiesRes = await secureFetch('/api/proxies');
         if (proxiesRes) state.proxies = await proxiesRes.json();
-        
-        const providersRes = await secureFetch('/api/oidc-providers');
         if (providersRes) state.oidcProviders = await providersRes.json();
         
         renderProxyList();
@@ -694,9 +695,11 @@ document.getElementById('admin-credentials-form').addEventListener('submit', asy
 
 // --- Settings Load Helper ---
 async function loadSettings() {
-    await loadAdminCredentials();
-    await loadDashboardAuthConfig();
-    await renderDashboard2FASettings();
+    await Promise.all([
+        loadAdminCredentials(),
+        loadDashboardAuthConfig(),
+        renderDashboard2FASettings()
+    ]);
 }
 
 async function loadAdminCredentials() {
@@ -714,12 +717,14 @@ async function loadAdminCredentials() {
 // --- Dashboard Authentication Form Submit & Load ---
 async function loadDashboardAuthConfig() {
     try {
-        const res = await secureFetch('/api/dashboard-auth-config');
-        if (!res) return;
-        const config = await res.json();
+        const [res, providersRes] = await Promise.all([
+            secureFetch('/api/dashboard-auth-config'),
+            secureFetch('/api/oidc-providers')
+        ]);
         
-        const providersRes = await secureFetch('/api/oidc-providers');
-        if (!providersRes) return;
+        if (!res || !providersRes) return;
+        
+        const config = await res.json();
         const providers = await providersRes.json();
         
         const container = document.getElementById('dash-allowed-providers-list');
@@ -1115,14 +1120,15 @@ document.getElementById('export-proxies-btn').addEventListener('click', () => {
 // --- User Accounts Management ---
 async function loadUsersData() {
     try {
-        const res = await secureFetch('/api/users');
+        const [res, providersRes] = await Promise.all([
+            secureFetch('/api/users'),
+            secureFetch('/api/oidc-providers')
+        ]);
+        
+        if (res) state.users = await res.json();
+        if (providersRes) state.oidcProviders = await providersRes.json();
+        
         if (res) {
-            state.users = await res.json();
-            
-            // Also need providers for user OIDC mapping display
-            const providersRes = await secureFetch('/api/oidc-providers');
-            if (providersRes) state.oidcProviders = await providersRes.json();
-            
             renderUserList();
         }
     } catch (err) {

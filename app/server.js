@@ -21,7 +21,7 @@ if (!fs.existsSync(path.dirname(DB_PATH))) {
 async function initDb() {
   const defaultAdminUser = process.env.ADMIN_USER || 'admin';
   const defaultAdminPass = process.env.ADMIN_PASS || 'caddyui_admin_secure_pass_123';
-  const defaultAdminPassHash = await Bun.password.hash(defaultAdminPass);
+  const defaultAdminPassHash = await Bun.password.hash(defaultAdminPass, { algorithm: 'bcrypt', cost: 10 });
 
   const defaultOidcIssuer = process.env.OIDC_ISSUER || '';
   const defaultOidcClientId = process.env.OIDC_CLIENT_ID || '';
@@ -549,7 +549,7 @@ app.post('/api/users', authenticateToken, csrfProtection, async (c) => {
   
   let passwordHash = '';
   if (password) {
-    passwordHash = await Bun.password.hash(password);
+    passwordHash = await Bun.password.hash(password, { algorithm: 'bcrypt', cost: 10 });
   } else if (!ssoEnabled) {
     return c.json({ error: 'Password is required when SSO is disabled.' }, 400);
   }
@@ -600,7 +600,7 @@ app.put('/api/users/:id', authenticateToken, csrfProtection, async (c) => {
   }
 
   if (password) {
-    current.passwordHash = await Bun.password.hash(password);
+    current.passwordHash = await Bun.password.hash(password, { algorithm: 'bcrypt', cost: 10 });
   }
 
   if (role) {
@@ -711,19 +711,19 @@ app.post('/api/users/:id/2fa/disable', authenticateToken, csrfProtection, (c) =>
 
 app.get('/api/status', authenticateToken, async (c) => {
   const db = readDb();
-  const statusList = [];
 
-  for (const instance of db.instances) {
+  const statusPromises = db.instances.map(async (instance) => {
     try {
       const start = Date.now();
       await fetch(`${instance.url}/config/`, { signal: AbortSignal.timeout(2000) });
       const latency = Date.now() - start;
-      statusList.push({ id: instance.id, online: true, latency });
+      return { id: instance.id, online: true, latency };
     } catch (err) {
-      statusList.push({ id: instance.id, online: false, error: err.message });
+      return { id: instance.id, online: false, error: err.message };
     }
-  }
+  });
 
+  const statusList = await Promise.all(statusPromises);
   return c.json(statusList);
 });
 
@@ -811,7 +811,7 @@ app.post('/api/proxies', authenticateToken, csrfProtection, async (c) => {
   if (basicAuthCredentials && Array.isArray(basicAuthCredentials)) {
     credentials = await Promise.all(basicAuthCredentials.map(async cred => ({
       username: String(cred.username).trim(),
-      passwordHash: cred.password ? await Bun.password.hash(cred.password) : ''
+      passwordHash: cred.password ? await Bun.password.hash(cred.password, { algorithm: 'bcrypt', cost: 10 }) : ''
     })));
   }
 
@@ -855,7 +855,7 @@ app.put('/api/proxies/:id', authenticateToken, csrfProtection, async (c) => {
       const existing = (currentProxy.basicAuthCredentials || []).find(c => c.username === cred.username);
       return {
         username: String(cred.username).trim(),
-        passwordHash: cred.password ? await Bun.password.hash(cred.password) : (existing ? existing.passwordHash : '')
+        passwordHash: cred.password ? await Bun.password.hash(cred.password, { algorithm: 'bcrypt', cost: 10 }) : (existing ? existing.passwordHash : '')
       };
     }));
   }
@@ -987,7 +987,7 @@ app.post('/api/admin-credentials', authenticateToken, csrfProtection, async (c) 
 
   db.users[adminIdx].username = String(username).trim();
   if (password) {
-    db.users[adminIdx].passwordHash = await Bun.password.hash(password);
+    db.users[adminIdx].passwordHash = await Bun.password.hash(password, { algorithm: 'bcrypt', cost: 10 });
   }
   writeDb(db);
   return c.json({ success: true });
