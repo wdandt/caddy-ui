@@ -6,27 +6,21 @@ services:
       network: host
     container_name: caddyui-caddy
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+    network_mode: host
     volumes:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      CADDY_ADMIN: 0.0.0.0:2019
+      CADDY_ADMIN: 127.0.0.1:2019
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
     command: ["sh", "-c", "mkdir -p /config/caddy && [ -f /config/caddy/autosave.json ] || echo '{}' > /config/caddy/autosave.json && exec caddy run --config /config/caddy/autosave.json --resume --adapter json"]
-    networks:
-      - caddyui
   
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflare-tunnel
     restart: unless-stopped
+    network_mode: host
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    networks:
-      - caddyui
 
   caddy-ui:
     build:
@@ -34,8 +28,7 @@ services:
       network: host
     container_name: caddyui-dashboard
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    network_mode: host
     volumes:
       - caddyui_data:/app/data
     environment:
@@ -59,16 +52,8 @@ services:
         limits:
           cpus: '0.20'
           memory: 64M
-    networks:
-      - caddyui
-
-
 
 volumes:
   caddy_data:
   caddy_config:
   caddyui_data:
-
-networks:
-  caddyui:
-    driver: bridge

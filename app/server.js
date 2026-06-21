@@ -51,7 +51,7 @@ async function initDb() {
       {
         id: 'local',
         name: 'Local Caddy',
-        url: 'http://caddyui-caddy:2019',
+        url: 'http://127.0.0.1:2019',
         isLocal: true
       }
     ],
