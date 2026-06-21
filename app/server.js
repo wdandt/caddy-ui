@@ -7,6 +7,21 @@ import path from 'path';
 import crypto from 'crypto';
 
 const app = new Hono();
+
+// Global middleware to handle HTTPS detection behind proxies/tunnels (like Cloudflare Tunnel)
+app.use('*', async (c, next) => {
+  const originalHeader = c.req.header;
+  c.req.header = function (name) {
+    if (name && name.toLowerCase() === 'x-forwarded-proto') {
+      const xfp = originalHeader.call(c.req, name);
+      const portalUrl = process.env.SSO_PORTAL_URL || '';
+      return xfp === 'https' || portalUrl.startsWith('https://') ? 'https' : 'http';
+    }
+    return originalHeader.call(c.req, name);
+  };
+  await next();
+});
+
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Database file setup
@@ -193,16 +208,22 @@ const JWT_SECRET = getJwtSecret();
 
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || '';
 
+function checkHttps(c) {
+  const xfp = c.req.header('x-forwarded-proto');
+  const portalUrl = process.env.SSO_PORTAL_URL || '';
+  return xfp === 'https' || portalUrl.startsWith('https://');
+}
+
 // Get cookie name based on security context
 function getSessionCookieName(c) {
-  const isHttps = c.req.header('x-forwarded-proto') === 'https';
-  if (isHttps) {
+  if (checkHttps(c)) {
     return COOKIE_DOMAIN ? '__Secure-caddyui-session' : '__Host-caddyui-session';
   }
   return 'caddyui-session';
 }
 
-function setSessionCookie(c, cookieName, token, isHttps) {
+function setSessionCookie(c, cookieName, token, _isHttps) {
+  const isHttps = checkHttps(c);
   const cookieOpts = {
     path: '/',
     httpOnly: true,
@@ -216,7 +237,8 @@ function setSessionCookie(c, cookieName, token, isHttps) {
   setCookie(c, cookieName, token, cookieOpts);
 }
 
-function removeSessionCookie(c, cookieName, isHttps) {
+function removeSessionCookie(c, cookieName, _isHttps) {
+  const isHttps = checkHttps(c);
   const cookieOpts = { path: '/', secure: isHttps };
   if (COOKIE_DOMAIN) {
     cookieOpts.domain = COOKIE_DOMAIN;
@@ -426,6 +448,7 @@ async function syncCaddyConfig(instance, proxies) {
   caddyConfig.apps.http.servers.srv0.routes = routes;
 
   const portalUrl = process.env.SSO_PORTAL_URL ? process.env.SSO_PORTAL_URL.replace(/\/$/, '') : '';
+  const redirectScheme = portalUrl.startsWith('https://') ? 'https' : '{http.request.scheme}';
   caddyConfig.apps.http.servers.srv0.handle_errors = [
     {
       match: [
@@ -442,7 +465,7 @@ async function syncCaddyConfig(instance, proxies) {
           handler: "static_response",
           status_code: 302,
           headers: {
-            "Location": [`${portalUrl}/login?redirect={http.request.scheme}://{http.request.host}{http.request.uri}`]
+            "Location": [`${portalUrl}/login?redirect=${redirectScheme}://{http.request.host}{http.request.uri}`]
           }
         }
       ]
@@ -465,7 +488,7 @@ async function syncCaddyConfig(instance, proxies) {
 
 app.get('/api/csrf', (c) => {
   const token = crypto.randomBytes(32).toString('hex');
-  const isHttps = c.req.header('x-forwarded-proto') === 'https';
+  const isHttps = checkHttps(c);
   setCookie(c, 'caddyui-csrf', token, {
     path: '/',
     httpOnly: false,
