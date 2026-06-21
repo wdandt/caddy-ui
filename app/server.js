@@ -816,21 +816,61 @@ app.get('/api/instances', authenticateToken, (c) => {
 
 app.post('/api/instances', authenticateToken, csrfProtection, async (c) => {
   const { name, url } = await c.req.json();
-  if (!name || !url) {
+  const trimmedName = name ? String(name).trim() : '';
+  const trimmedUrl = url ? String(url).trim() : '';
+
+  if (!trimmedName || !trimmedUrl) {
     return c.json({ error: 'Name and URL are required' }, 400);
+  }
+
+  // TODO(security): Validate Caddy Admin URL scheme
+  if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+    return c.json({ error: 'URL must start with http:// or https://' }, 400);
   }
 
   const db = readDb();
   const newInstance = {
     id: crypto.randomBytes(8).toString('hex'),
-    name: String(name),
-    url: String(url),
+    name: trimmedName,
+    url: trimmedUrl,
     isLocal: false
   };
 
   db.instances.push(newInstance);
   writeDb(db);
   return c.json(newInstance, 201);
+});
+
+app.put('/api/instances/:id', authenticateToken, csrfProtection, async (c) => {
+  const id = c.req.param('id');
+  const { name, url } = await c.req.json();
+  const trimmedName = name ? String(name).trim() : '';
+  const trimmedUrl = url ? String(url).trim() : '';
+
+  if (!trimmedName || !trimmedUrl) {
+    return c.json({ error: 'Name and URL are required' }, 400);
+  }
+
+  // TODO(security): Validate Caddy Admin URL scheme
+  if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+    return c.json({ error: 'URL must start with http:// or https://' }, 400);
+  }
+
+  const db = readDb();
+  const idx = db.instances.findIndex(i => i.id === id);
+  if (idx === -1) {
+    return c.json({ error: 'Instance not found' }, 404);
+  }
+
+  const current = db.instances[idx];
+  db.instances[idx] = {
+    ...current,
+    name: trimmedName,
+    url: trimmedUrl
+  };
+
+  writeDb(db);
+  return c.json(db.instances[idx]);
 });
 
 app.delete('/api/instances/:id', authenticateToken, csrfProtection, (c) => {

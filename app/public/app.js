@@ -227,7 +227,7 @@ function setupModal(modalId, openBtnId, closeBtnId, cancelBtnId) {
 }
 
 setupModal('proxy-modal', null, 'close-proxy-modal', 'cancel-proxy-modal');
-setupModal('server-modal', 'add-server-btn', 'close-server-modal', 'cancel-server-modal');
+setupModal('server-modal', null, 'close-server-modal', 'cancel-server-modal');
 setupModal('user-modal', null, 'close-user-modal', 'cancel-user-modal');
 setupModal('provider-modal', null, 'close-provider-modal', 'cancel-provider-modal');
 setupModal('mfa-modal', null, 'close-mfa-modal', 'cancel-mfa-modal');
@@ -373,6 +373,16 @@ function renderServerList() {
             statusBadge.textContent = 'Checking...';
         }
         statusContainer.appendChild(statusBadge);
+
+        // Edit button
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-secondary';
+        editBtn.style.padding = '0.4rem 0.8rem';
+        editBtn.style.fontSize = '0.85rem';
+        editBtn.style.marginRight = '0.5rem';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => openEditServerModal(instance));
+        statusContainer.appendChild(editBtn);
 
         // View Config button
         const viewConfigBtn = document.createElement('button');
@@ -617,23 +627,48 @@ async function deleteProxyRoute(id) {
 }
 
 // --- Remote Server Management Actions ---
+function resetServerModal() {
+    document.getElementById('server-modal').classList.remove('open');
+    document.getElementById('server-form').reset();
+    document.getElementById('server-id').value = '';
+    document.getElementById('server-modal-title').textContent = 'Add Remote Caddy Server';
+    document.getElementById('save-server-btn').textContent = 'Add Server';
+}
+
+function openEditServerModal(instance) {
+    document.getElementById('server-modal-title').textContent = 'Edit Caddy Server';
+    document.getElementById('server-id').value = instance.id;
+    document.getElementById('server-name').value = instance.name;
+    document.getElementById('server-url').value = instance.url;
+    document.getElementById('save-server-btn').textContent = 'Save Changes';
+    document.getElementById('server-modal').classList.add('open');
+}
+
+document.getElementById('add-server-btn').addEventListener('click', () => {
+    resetServerModal();
+    document.getElementById('server-modal').classList.add('open');
+});
+
 document.getElementById('server-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
+    const id = document.getElementById('server-id').value;
     const name = document.getElementById('server-name').value.trim();
     const url = document.getElementById('server-url').value.trim();
 
+    const method = id ? 'PUT' : 'POST';
+    const endpoint = id ? `/api/instances/${id}` : '/api/instances';
+
     try {
-        const res = await secureFetch('/api/instances', {
-            method: 'POST',
+        const res = await secureFetch(endpoint, {
+            method,
             body: { name, url }
         });
         
         if (res && res.ok) {
-            document.getElementById('server-modal').classList.remove('open');
-            document.getElementById('server-form').reset();
+            resetServerModal();
             loadDashboardData();
-        } else {
+        } else if (res) {
             const err = await res.json();
             alert(`Error: ${err.error}`);
         }
