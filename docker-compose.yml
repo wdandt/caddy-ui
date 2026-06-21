@@ -42,6 +42,7 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - CADDY_ADMIN=${CADDY_ADMIN:-127.0.0.1:2019}
       # Fallback admin credentials
       - ADMIN_USER=${ADMIN_USER:-admin}
       - ADMIN_PASS=${ADMIN_PASS:-caddyui_admin_secure_pass_123}

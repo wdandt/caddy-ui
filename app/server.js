@@ -181,6 +181,12 @@ function readDb() {
   if (!dbInMemory) {
     dbInMemory = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
   }
+  // Dynamically align the local instance URL with CADDY_ADMIN env var
+  const localInstance = dbInMemory.instances.find(i => i.isLocal);
+  if (localInstance) {
+    const defaultCaddyAdmin = process.env.CADDY_ADMIN || '127.0.0.1:2019';
+    localInstance.url = `http://${defaultCaddyAdmin}`;
+  }
   return dbInMemory;
 }
 
