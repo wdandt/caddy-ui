@@ -12,7 +12,15 @@ services:
     environment:
       CADDY_ADMIN: ${CADDY_ADMIN:-127.0.0.1:2019}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
-    command: ["sh", "-c", "mkdir -p /config/caddy && [ -f /config/caddy/autosave.json ] || echo '{}' > /config/caddy/autosave.json && exec caddy run --config /config/caddy/autosave.json --resume --adapter json --admin $$CADDY_ADMIN"]
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /config/caddy
+        if [ ! -f /config/caddy/autosave.json ] || [ "$$(cat /config/caddy/autosave.json)" = "{}" ] || [ "$$(cat /config/caddy/autosave.json)" = "" ]; then
+          echo '{"admin":{"listen":"{env.CADDY_ADMIN}"}}' > /config/caddy/autosave.json
+        fi
+        exec caddy run --config /config/caddy/autosave.json --resume --adapter json
   
   cloudflared:
     image: cloudflare/cloudflared:latest
