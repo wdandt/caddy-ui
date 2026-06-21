@@ -346,7 +346,7 @@ function renderServerList() {
 
         const subtitle = document.createElement('div');
         subtitle.className = 'item-subtitle';
-        subtitle.textContent = `${instance.url} (SSO Gateway: ${instance.ssoUpstreamDial})`;
+        subtitle.textContent = instance.url;
 
         info.appendChild(title);
         info.appendChild(subtitle);
@@ -622,12 +622,11 @@ document.getElementById('server-form').addEventListener('submit', async (e) => {
     
     const name = document.getElementById('server-name').value.trim();
     const url = document.getElementById('server-url').value.trim();
-    const ssoUpstreamDial = document.getElementById('server-dial').value.trim();
 
     try {
         const res = await secureFetch('/api/instances', {
             method: 'POST',
-            body: { name, url, ssoUpstreamDial }
+            body: { name, url }
         });
         
         if (res && res.ok) {
