@@ -10,9 +10,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      CADDY_ADMIN: 127.0.0.1:2019
+      CADDY_ADMIN: ${CADDY_ADMIN:-127.0.0.1:2019}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
-    command: ["sh", "-c", "mkdir -p /config/caddy && [ -f /config/caddy/autosave.json ] || echo '{}' > /config/caddy/autosave.json && exec caddy run --config /config/caddy/autosave.json --resume --adapter json"]
+    command: ["sh", "-c", "mkdir -p /config/caddy && [ -f /config/caddy/autosave.json ] || echo '{}' > /config/caddy/autosave.json && exec caddy run --config /config/caddy/autosave.json --resume --adapter json --admin $$CADDY_ADMIN"]
   
   cloudflared:
     image: cloudflare/cloudflared:latest
