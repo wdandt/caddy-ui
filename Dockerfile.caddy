@@ -5,8 +5,8 @@ ARG TARGETARCH=amd64
 
 RUN apk add --no-cache curl
 
-# Tải trực tiếp binary Caddy đã tích hợp plugin Cloudflare DNS
-RUN curl -L "https://caddyserver.com/api/download?os=${TARGETOS}&arch=${TARGETARCH}&p=github.com/caddy-dns/cloudflare" -o /usr/bin/caddy \
+# Tải trực tiếp binary Caddy đã tích hợp plugin Cloudflare DNS và JWT Auth
+RUN curl -L "https://caddyserver.com/api/download?os=${TARGETOS}&arch=${TARGETARCH}&p=github.com/caddy-dns/cloudflare&p=github.com/ggicci/caddy-jwt" -o /usr/bin/caddy \
     && chmod +x /usr/bin/caddy
 
 FROM caddy:alpine

@@ -17,6 +17,8 @@ if (!fs.existsSync(path.dirname(DB_PATH))) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 }
 
+let dbInMemory = null;
+
 // Initialize database with defaults and perform migrations
 async function initDb() {
   const defaultAdminUser = process.env.ADMIN_USER || 'admin';
@@ -35,7 +37,6 @@ async function initDb() {
         id: 'local',
         name: 'Local Caddy',
         url: 'http://caddyui-caddy:2019',
-        ssoUpstreamDial: 'caddy-ui:3000',
         isLocal: true
       }
     ],
@@ -73,6 +74,7 @@ async function initDb() {
 
   if (!fs.existsSync(DB_PATH)) {
     fs.writeFileSync(DB_PATH, JSON.stringify(defaultDbStructure, null, 2), 'utf-8');
+    dbInMemory = defaultDbStructure;
     return;
   }
 
@@ -154,16 +156,21 @@ async function initDb() {
     if (modified) {
       fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf-8');
     }
+    dbInMemory = db;
   } catch (err) {
     console.error('Error migrating DB:', err);
   }
 }
 
 function readDb() {
-  return JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+  if (!dbInMemory) {
+    dbInMemory = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+  }
+  return dbInMemory;
 }
 
 function writeDb(data) {
+  dbInMemory = data;
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
 }
 
@@ -184,10 +191,37 @@ function getJwtSecret() {
 
 const JWT_SECRET = getJwtSecret();
 
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || '';
+
 // Get cookie name based on security context
 function getSessionCookieName(c) {
   const isHttps = c.req.header('x-forwarded-proto') === 'https';
-  return isHttps ? '__Host-caddyui-session' : 'caddyui-session';
+  if (isHttps) {
+    return COOKIE_DOMAIN ? '__Secure-caddyui-session' : '__Host-caddyui-session';
+  }
+  return 'caddyui-session';
+}
+
+function setSessionCookie(c, cookieName, token, isHttps) {
+  const cookieOpts = {
+    path: '/',
+    httpOnly: true,
+    secure: isHttps,
+    sameSite: 'Lax',
+    maxAge: 8 * 60 * 60
+  };
+  if (COOKIE_DOMAIN) {
+    cookieOpts.domain = COOKIE_DOMAIN;
+  }
+  setCookie(c, cookieName, token, cookieOpts);
+}
+
+function removeSessionCookie(c, cookieName, isHttps) {
+  const cookieOpts = { path: '/', secure: isHttps };
+  if (COOKIE_DOMAIN) {
+    cookieOpts.domain = COOKIE_DOMAIN;
+  }
+  deleteCookie(c, cookieName, cookieOpts);
 }
 
 // --- Native TOTP (2FA) Helper Functions (RFC 6238) ---
@@ -261,9 +295,9 @@ const authenticateToken = async (c, next) => {
     c.set('user', decoded);
     await next();
   } catch (err) {
-    const cookieName = getSessionCookieName(c);
+        const cookieName = getSessionCookieName(c);
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
-    deleteCookie(c, cookieName, { path: '/', secure: isHttps });
+    removeSessionCookie(c, cookieName, isHttps);
     return c.json({ error: 'Session expired or invalid' }, 401);
   }
 };
@@ -333,41 +367,14 @@ async function syncCaddyConfig(instance, proxies) {
       innerRoutes.push({
         handle: [
           {
-            handler: "reverse_proxy",
-            rewrite: {
-              method: "GET",
-              uri: "/forward-auth"
-            },
-            headers: {
-              request: {
-                set: {
-                  "X-Forwarded-Method": ["{http.request.method}"],
-                  "X-Forwarded-Uri": ["{http.request.uri}"],
-                  "X-Forwarded-Host": ["{http.request.host}"]
-                }
+            handler: "authentication",
+            providers: {
+              jwt: {
+                sign_key: Buffer.from(JWT_SECRET).toString('base64'),
+                sign_alg: "HS256",
+                from_cookies: ["__Secure-caddyui-session", "__Host-caddyui-session", "caddyui-session"]
               }
-            },
-            handle_response: [
-              {
-                match: {
-                  status_code: [2]
-                },
-                routes: [
-                  {
-                    handle: [
-                      {
-                        handler: "vars"
-                      }
-                    ]
-                  }
-                ]
-              }
-            ],
-            upstreams: [
-              {
-                dial: cleanDialTarget(instance.ssoUpstreamDial || 'caddy-ui:3000')
-              }
-            ]
+            }
           }
         ]
       });
@@ -417,6 +424,30 @@ async function syncCaddyConfig(instance, proxies) {
   });
 
   caddyConfig.apps.http.servers.srv0.routes = routes;
+
+  const portalUrl = process.env.SSO_PORTAL_URL ? process.env.SSO_PORTAL_URL.replace(/\/$/, '') : '';
+  caddyConfig.apps.http.servers.srv0.handle_errors = [
+    {
+      match: [
+        {
+          method: ["GET"],
+          header: {
+            "Accept": ["*text/html*"]
+          },
+          expression: "{err.status_code} == 401"
+        }
+      ],
+      handle: [
+        {
+          handler: "static_response",
+          status_code: 302,
+          headers: {
+            "Location": [`${portalUrl}/login?redirect={http.request.scheme}://{http.request.host}{http.request.uri}`]
+          }
+        }
+      ]
+    }
+  ];
 
   console.log(`Pushing synced configuration to ${instance.name} (${targetUrl})...`);
   const response = await fetch(`${targetUrl}/load`, {
@@ -753,7 +784,7 @@ app.get('/api/instances', authenticateToken, (c) => {
 });
 
 app.post('/api/instances', authenticateToken, csrfProtection, async (c) => {
-  const { name, url, ssoUpstreamDial } = await c.req.json();
+  const { name, url } = await c.req.json();
   if (!name || !url) {
     return c.json({ error: 'Name and URL are required' }, 400);
   }
@@ -763,7 +794,6 @@ app.post('/api/instances', authenticateToken, csrfProtection, async (c) => {
     id: crypto.randomBytes(8).toString('hex'),
     name: String(name),
     url: String(url),
-    ssoUpstreamDial: ssoUpstreamDial ? String(ssoUpstreamDial) : 'caddy-ui:3000',
     isLocal: false
   };
 
@@ -1058,13 +1088,7 @@ app.post('/auth/login', async (c) => {
   const cookieName = getSessionCookieName(c);
   const isHttps = c.req.header('x-forwarded-proto') === 'https';
 
-  setCookie(c, cookieName, token, {
-    path: '/',
-    httpOnly: true,
-    secure: isHttps,
-    sameSite: 'Lax',
-    maxAge: 8 * 60 * 60
-  });
+  setSessionCookie(c, cookieName, token, isHttps);
 
   return c.json({ success: true, redirect: '/' });
 });
@@ -1106,13 +1130,7 @@ app.post('/auth/verify-2fa', async (c) => {
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
 
     deleteCookie(c, 'caddyui-pending2fa', { path: '/', secure: isHttps });
-    setCookie(c, cookieName, token, {
-      path: '/',
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: 'Lax',
-      maxAge: 8 * 60 * 60
-    });
+    setSessionCookie(c, cookieName, token, isHttps);
 
     return c.json({ success: true, redirect: '/' });
   } catch (err) {
@@ -1265,13 +1283,7 @@ app.get('/auth/callback', async (c) => {
     const cookieName = getSessionCookieName(c);
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
 
-    setCookie(c, cookieName, token, {
-      path: '/',
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: 'Lax',
-      maxAge: 8 * 60 * 60
-    });
+    setSessionCookie(c, cookieName, token, isHttps);
 
     return c.redirect(targetRedirect);
   } catch (err) {
@@ -1283,7 +1295,7 @@ app.get('/auth/callback', async (c) => {
 app.post('/auth/logout', (c) => {
   const cookieName = getSessionCookieName(c);
   const isHttps = c.req.header('x-forwarded-proto') === 'https';
-  deleteCookie(c, cookieName, { path: '/', secure: isHttps });
+  removeSessionCookie(c, cookieName, isHttps);
   return c.json({ success: true });
 });
 
@@ -1326,10 +1338,12 @@ async function handleUnauthorized(c, host, uri, method, proxy) {
       provider = db.oidcProviders.find(p => p.enabled);
     }
 
+    const portalUrl = process.env.SSO_PORTAL_URL ? process.env.SSO_PORTAL_URL.replace(/\/$/, '') : '';
+
     if (provider) {
-      return c.redirect(`/auth/sso?providerId=${provider.id}&redirect=${encodeURIComponent(originalUrl)}`);
+      return c.redirect(`${portalUrl}/auth/sso?providerId=${provider.id}&redirect=${encodeURIComponent(originalUrl)}`);
     } else {
-      return c.redirect(`/login?redirect=${encodeURIComponent(originalUrl)}`);
+      return c.redirect(`${portalUrl}/login?redirect=${encodeURIComponent(originalUrl)}`);
     }
   }
 
@@ -1346,7 +1360,7 @@ app.get('/login', async (c) => {
       return c.redirect('/');
     } catch (err) {
       const isHttps = c.req.header('x-forwarded-proto') === 'https';
-      deleteCookie(c, cookieName, { path: '/', secure: isHttps });
+      removeSessionCookie(c, cookieName, isHttps);
     }
   }
   return c.html(fs.readFileSync(path.join(__dirname, 'public', 'login.html'), 'utf-8'));
@@ -1379,7 +1393,7 @@ app.get('/', async (c) => {
     return c.html(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf-8'));
   } catch (err) {
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
-    deleteCookie(c, cookieName, { path: '/', secure: isHttps });
+    removeSessionCookie(c, cookieName, isHttps);
     return c.redirect('/login');
   }
 });
@@ -1416,7 +1430,7 @@ app.get('*', async (c, next) => {
     return c.html(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf-8'));
   } catch (err) {
     const isHttps = c.req.header('x-forwarded-proto') === 'https';
-    deleteCookie(c, cookieName, { path: '/', secure: isHttps });
+    removeSessionCookie(c, cookieName, isHttps);
     return c.redirect('/login');
   }
 });
