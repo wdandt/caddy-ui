@@ -455,28 +455,30 @@ async function syncCaddyConfig(instance, proxies) {
 
   const portalUrl = process.env.SSO_PORTAL_URL ? process.env.SSO_PORTAL_URL.replace(/\/$/, '') : '';
   const redirectScheme = portalUrl.startsWith('https://') ? 'https' : '{http.request.scheme}';
-  caddyConfig.apps.http.servers.srv0.handle_errors = [
-    {
-      match: [
-        {
-          method: ["GET"],
-          header: {
-            "Accept": ["*text/html*"]
-          },
-          expression: "{err.status_code} == 401"
-        }
-      ],
-      handle: [
-        {
-          handler: "static_response",
-          status_code: 302,
-          headers: {
-            "Location": [`${portalUrl}/login?redirect=${redirectScheme}://{http.request.host}{http.request.uri}`]
+  caddyConfig.apps.http.servers.srv0.errors = {
+    routes: [
+      {
+        match: [
+          {
+            method: ["GET"],
+            header: {
+              "Accept": ["*text/html*"]
+            },
+            expression: "{err.status_code} == 401"
           }
-        }
-      ]
-    }
-  ];
+        ],
+        handle: [
+          {
+            handler: "static_response",
+            status_code: 302,
+            headers: {
+              "Location": [`${portalUrl}/login?redirect=${redirectScheme}://{http.request.host}{http.request.uri}`]
+            }
+          }
+        ]
+      }
+    ]
+  };
 
   console.log(`Pushing synced configuration to ${instance.name} (${targetUrl})...`);
   const response = await fetch(`${targetUrl}/load`, {
