@@ -24,13 +24,22 @@ A lightweight, modern Web UI Dashboard and Single Sign-On (SSO) Forward Auth Pro
 │   │   ├── index.html       # Main dashboard page
 │   │   ├── login.html       # Login page
 │   │   ├── style.css        # Glassmorphic UI theme styles
-│   │   └── app.js           # Frontend logic & API handlers
+│   │   └── js/              # Modular Frontend logic
+│   │       ├── api.js       # Secure fetch and session API
+│   │       ├── main.js      # App assembly and rendering logic
+│   │       ├── state.js     # Global state management
+│   │       └── utils.js     # UI helpers and toast notifications
 │   ├── data/                # Persistent database directory
-│   │   ├── db.json          # SQLite-free lightweight JSON database
+│   │   ├── db.json          # Lightweight JSON database
 │   │   └── jwt_secret.txt   # Ephemeral token encryption key (auto-generated)
-│   ├── Dockerfile           # Production Dockerfile for Node.js App
-│   ├── package.json         # Node.js dependencies & scripts
-│   └── server.js            # Express API server & Forward Auth Gatekeeper
+│   ├── Dockerfile           # Production Dockerfile for Bun/Node App
+│   ├── package.json         # Dependencies & scripts
+│   ├── server.js            # Hono API server & Forward Auth Gatekeeper
+│   ├── db.js                # Database interaction logic
+│   ├── middlewares/         # Route middlewares (e.g. auth, CSRF)
+│   ├── routes/              # Modular API endpoints
+│   ├── services/            # Background services (Caddy sync)
+│   └── utils/               # Backend helper functions (Crypto, session)
 ├── Dockerfile.caddy         # Custom Caddy image builder with Cloudflare DNS
 ├── docker-compose.yml       # Orchestration stack for Caddy, Dashboard & Cloudflare Tunnel
 ├── .env.example             # Template environment variables file

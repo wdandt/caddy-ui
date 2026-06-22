@@ -1,180 +1,8 @@
-// State Management
-let state = {
-    user: null,
-    instances: [],
-    proxies: [],
-    oidcConfig: {},
-    serverStatus: {},
-    csrfToken: '',
-    users: [],
-    oidcProviders: []
-};
+import { state } from './state.js';
+import { showToast, escapeHtml, getCookie, parseJwt } from './utils.js';
+import { secureFetch, initSession } from './api.js';
 
-// --- CSRF and Secure Fetch API ---
-async function initSession() {
-    try {
-        const res = await fetch('/api/csrf');
-        if (!res.ok) throw new Error('Failed to fetch CSRF token');
-        const data = await res.json();
-        state.csrfToken = data.csrfToken;
-    } catch (err) {
-        console.error('CSRF initiation error:', err);
-    }
-}
-
-async function secureFetch(url, options = {}) {
-    if (!options.headers) {
-        options.headers = {};
-    }
-    
-    // Add CSRF token for state-changing requests
-    if (options.method && !['GET', 'HEAD', 'OPTIONS'].includes(options.method.toUpperCase())) {
-        options.headers['X-CSRF-Token'] = state.csrfToken;
-    }
-    
-    if (options.body && typeof options.body === 'object') {
-        options.headers['Content-Type'] = 'application/json';
-        options.body = JSON.stringify(options.body);
-    }
-
-    try {
-        const response = await fetch(url, options);
-        
-        if (response.status === 401) {
-            // Session expired, redirect to login
-            window.location.href = '/login';
-            return null;
-        }
-
-        // --- Common Error/Success Handling ---
-        if (!options.silent) {
-            const clone = response.clone();
-            clone.json().then(data => {
-                if (!response.ok) {
-                    showToast(data.error || `Error: ${response.statusText}`, 'error');
-                } else if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method.toUpperCase())) {
-                    if (data.message || data.successMessage) {
-                        showToast(data.message || data.successMessage, 'success');
-                    } else if (data.success || data.synced || data.id || data.proxy) {
-                        showToast('Operation completed successfully', 'success');
-                    }
-                }
-            }).catch(() => {
-                if (!response.ok) showToast(`Error: ${response.statusText}`, 'error');
-            });
-        }
-        
-        return response;
-    } catch (err) {
-        if (!options.silent) showToast('Network Error: ' + err.message, 'error');
-        return null;
-    }
-}
-
-// --- Toast Notification ---
-window.showToast = function(message, type = 'info') {
-    let container = document.getElementById('toast-container');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'toast-container';
-        container.style.position = 'fixed';
-        container.style.bottom = '20px';
-        container.style.right = '20px';
-        container.style.zIndex = '9999';
-        container.style.display = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.gap = '10px';
-        document.body.appendChild(container);
-    }
-
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.style.minWidth = '250px';
-    toast.style.padding = '12px 20px';
-    toast.style.borderRadius = '8px';
-    toast.style.color = '#fff';
-    toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-    toast.style.animation = 'slideIn 0.3s ease-out forwards';
-    toast.style.display = 'flex';
-    toast.style.justifyContent = 'space-between';
-    toast.style.alignItems = 'center';
-    toast.style.fontFamily = 'system-ui, sans-serif';
-    toast.style.fontSize = '0.9rem';
-
-    if (type === 'success') {
-        toast.style.backgroundColor = '#10b981';
-    } else if (type === 'error') {
-        toast.style.backgroundColor = '#ef4444';
-    } else {
-        toast.style.backgroundColor = '#3b82f6';
-    }
-
-    const text = document.createElement('span');
-    text.textContent = message;
-    toast.appendChild(text);
-
-    const closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '&times;';
-    closeBtn.style.background = 'none';
-    closeBtn.style.border = 'none';
-    closeBtn.style.color = '#fff';
-    closeBtn.style.fontSize = '1.2rem';
-    closeBtn.style.cursor = 'pointer';
-    closeBtn.style.marginLeft = '15px';
-    closeBtn.onclick = () => {
-        toast.style.animation = 'fadeOut 0.3s ease-out forwards';
-        setTimeout(() => toast.remove(), 300);
-    };
-    toast.appendChild(closeBtn);
-
-    container.appendChild(toast);
-
-    setTimeout(() => {
-        if (toast.parentElement) {
-            toast.style.animation = 'fadeOut 0.3s ease-out forwards';
-            setTimeout(() => {
-                if (toast.parentElement) toast.remove();
-            }, 300);
-        }
-    }, 5000);
-};
-
-if (!document.getElementById('toast-styles')) {
-    const style = document.createElement('style');
-    style.id = 'toast-styles';
-    style.textContent = `
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
-        }
-    `;
-    document.head.appendChild(style);
-}
-
-// --- DOM Helpers ---
-function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(';').shift();
-    return null;
-}
-
-function parseJwt(token) {
-    try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join(''));
-        return JSON.parse(jsonPayload);
-    } catch (e) {
-        return null;
-    }
-}
+window.showToast = showToast; // expose for any html onclick if any
 
 // --- Tab Navigation ---
 const tabs = [
@@ -271,6 +99,21 @@ function renderProxyList() {
 
         // SSO / Auth Mode Badge
         const ssoCol = document.createElement('div');
+        const statusBadge = document.createElement('span');
+        if (proxy.enabled !== false) {
+            statusBadge.className = 'badge';
+            statusBadge.style.background = 'rgba(16, 185, 129, 0.2)';
+            statusBadge.style.color = '#34d399';
+            statusBadge.textContent = 'ACTIVE';
+        } else {
+            statusBadge.className = 'badge badge-danger';
+            statusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+            statusBadge.style.color = '#f87171';
+            statusBadge.textContent = 'DISABLED';
+        }
+        statusBadge.style.marginRight = '0.5rem';
+        ssoCol.appendChild(statusBadge);
+
         const badge = document.createElement('span');
         const authMode = proxy.authMode || (proxy.ssoEnabled ? 'sso' : 'none');
         if (authMode === 'sso') {
@@ -307,6 +150,14 @@ function renderProxyList() {
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', () => deleteProxyRoute(proxy.id));
 
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'btn btn-secondary';
+        toggleBtn.style.padding = '0.4rem 0.8rem';
+        toggleBtn.style.fontSize = '0.85rem';
+        toggleBtn.style.marginRight = '0.5rem';
+        toggleBtn.textContent = proxy.enabled !== false ? 'Disable' : 'Enable';
+        toggleBtn.addEventListener('click', () => toggleProxyRoute(proxy.id));
+        actionsCol.appendChild(toggleBtn);
         actionsCol.appendChild(editBtn);
         actionsCol.appendChild(deleteBtn);
 
@@ -364,6 +215,11 @@ function renderServerList() {
             if (stat.online) {
                 statusBadge.className = 'badge badge-online';
                 statusBadge.textContent = `Online (${stat.latency}ms)`;
+            } else if (stat.error === 'Instance is disabled') {
+                statusBadge.className = 'badge badge-offline';
+                statusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+                statusBadge.style.color = '#f87171';
+                statusBadge.textContent = 'Disabled';
             } else {
                 statusBadge.className = 'badge badge-offline';
                 statusBadge.textContent = 'Offline';
@@ -382,6 +238,14 @@ function renderServerList() {
         editBtn.style.marginRight = '0.5rem';
         editBtn.textContent = 'Edit';
         editBtn.addEventListener('click', () => openEditServerModal(instance));
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'btn btn-secondary';
+        toggleBtn.style.padding = '0.4rem 0.8rem';
+        toggleBtn.style.fontSize = '0.85rem';
+        toggleBtn.style.marginRight = '0.5rem';
+        toggleBtn.textContent = instance.enabled !== false ? 'Disable' : 'Enable';
+        toggleBtn.addEventListener('click', () => toggleServer(instance.id));
+        statusContainer.appendChild(toggleBtn);
         statusContainer.appendChild(editBtn);
 
         // View Config button
@@ -492,6 +356,7 @@ function openEditProxyModal(proxy) {
     document.getElementById('proxy-server-select').value = proxy.instanceId;
     document.getElementById('proxy-host').value = proxy.host;
     document.getElementById('proxy-target').value = proxy.target;
+    document.getElementById('proxy-enabled').checked = proxy.enabled !== false;
     
     let authMode = proxy.authMode;
     if (!authMode) {
@@ -527,6 +392,7 @@ function resetProxyModal() {
     document.getElementById('proxy-sso-group').classList.add('hidden');
     document.getElementById('proxy-basic-group').classList.add('hidden');
     document.getElementById('proxy-json-text').value = '';
+    document.getElementById('proxy-enabled').checked = true;
 }
 
 document.getElementById('proxy-form').addEventListener('submit', async (e) => {
@@ -569,6 +435,7 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
         });
 
         const ssoEnabled = authMode === 'sso';
+        const enabled = document.getElementById('proxy-enabled').checked;
 
         payload = { 
             instanceId, 
@@ -577,7 +444,8 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
             ssoEnabled, 
             authMode, 
             ssoProviderId, 
-            basicAuthCredentials 
+            basicAuthCredentials, 
+            enabled 
         };
     }
     
@@ -633,6 +501,7 @@ function resetServerModal() {
     document.getElementById('server-id').value = '';
     document.getElementById('server-modal-title').textContent = 'Add Remote Caddy Server';
     document.getElementById('save-server-btn').textContent = 'Add Server';
+    document.getElementById('server-enabled').checked = true;
 }
 
 function openEditServerModal(instance) {
@@ -640,6 +509,7 @@ function openEditServerModal(instance) {
     document.getElementById('server-id').value = instance.id;
     document.getElementById('server-name').value = instance.name;
     document.getElementById('server-url').value = instance.url;
+    document.getElementById('server-enabled').checked = instance.enabled !== false;
     document.getElementById('save-server-btn').textContent = 'Save Changes';
     document.getElementById('server-modal').classList.add('open');
 }
@@ -655,6 +525,7 @@ document.getElementById('server-form').addEventListener('submit', async (e) => {
     const id = document.getElementById('server-id').value;
     const name = document.getElementById('server-name').value.trim();
     const url = document.getElementById('server-url').value.trim();
+    const enabled = document.getElementById('server-enabled').checked;
 
     const method = id ? 'PUT' : 'POST';
     const endpoint = id ? `/api/instances/${id}` : '/api/instances';
@@ -662,7 +533,7 @@ document.getElementById('server-form').addEventListener('submit', async (e) => {
     try {
         const res = await secureFetch(endpoint, {
             method,
-            body: { name, url }
+            body: { name, url, enabled }
         });
         
         if (res && res.ok) {
@@ -1211,6 +1082,22 @@ function renderUserList() {
             roleBadge.textContent = 'VIEWER';
         }
         title.appendChild(roleBadge);
+        
+        const enabledBadge = document.createElement('span');
+        enabledBadge.style.fontSize = '0.7rem';
+        enabledBadge.style.marginLeft = '0.5rem';
+        enabledBadge.style.padding = '0.15rem 0.4rem';
+        enabledBadge.style.borderRadius = '4px';
+        if (user.enabled !== false) {
+            enabledBadge.style.background = 'rgba(16, 185, 129, 0.2)';
+            enabledBadge.style.color = '#34d399';
+            enabledBadge.textContent = 'ACTIVE';
+        } else {
+            enabledBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+            enabledBadge.style.color = '#f87171';
+            enabledBadge.textContent = 'DISABLED';
+        }
+        title.appendChild(enabledBadge);
 
         if (user.ssoEnabled) {
             const ssoBadge = document.createElement('span');
@@ -1267,6 +1154,22 @@ function renderUserList() {
         editBtn.style.fontSize = '0.85rem';
         editBtn.textContent = 'Edit';
         editBtn.addEventListener('click', () => openEditUserModal(user));
+        if (user.id !== 'admin') {
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'btn btn-secondary';
+            toggleBtn.style.padding = '0.4rem 0.8rem';
+            toggleBtn.style.fontSize = '0.85rem';
+            toggleBtn.textContent = user.enabled !== false ? 'Disable' : 'Enable';
+            toggleBtn.addEventListener('click', () => toggleUser(user.id));
+            actions.appendChild(toggleBtn);
+        }
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'btn btn-secondary';
+        toggleBtn.style.padding = '0.4rem 0.8rem';
+        toggleBtn.style.fontSize = '0.85rem';
+        toggleBtn.textContent = provider.enabled ? 'Disable' : 'Enable';
+        toggleBtn.addEventListener('click', () => toggleProvider(provider.id));
+        actions.appendChild(toggleBtn);
         actions.appendChild(editBtn);
 
         if (user.id !== 'admin') {
@@ -1332,6 +1235,7 @@ function openEditUserModal(user) {
     document.getElementById('user-password').value = '';
     document.getElementById('user-password').placeholder = user.id ? '•••••••••••• (Leave empty to keep current)' : 'Password';
     document.getElementById('user-role').value = user.role;
+    document.getElementById('user-enabled').checked = user.enabled !== false;
     document.getElementById('user-sso-enabled').checked = user.ssoEnabled;
     
     populateUserSSOProviders();
@@ -1349,6 +1253,7 @@ document.getElementById('add-user-btn').addEventListener('click', () => {
     document.getElementById('user-password').value = '';
     document.getElementById('user-password').placeholder = 'Password';
     document.getElementById('user-role').value = 'viewer';
+    document.getElementById('user-enabled').checked = true;
     document.getElementById('user-sso-enabled').checked = false;
     
     populateUserSSOProviders();
@@ -1363,10 +1268,11 @@ document.getElementById('user-form').addEventListener('submit', async (e) => {
     const username = document.getElementById('user-username').value.trim();
     const password = document.getElementById('user-password').value;
     const role = document.getElementById('user-role').value;
+    const enabled = document.getElementById('user-enabled').checked;
     const ssoEnabled = document.getElementById('user-sso-enabled').checked;
     const ssoProviderId = ssoEnabled ? document.getElementById('user-sso-provider').value : null;
 
-    const payload = { username, role, ssoEnabled, ssoProviderId };
+    const payload = { username, role, ssoEnabled, ssoProviderId, enabled };
     if (password) payload.password = password;
 
     const method = id ? 'PUT' : 'POST';
@@ -1676,3 +1582,33 @@ window.addEventListener('load', async () => {
     displayUserSession();
     loadDashboardData();
 });
+
+
+// --- Quick Action Toggle Functions ---
+async function toggleProxyRoute(id) {
+    try {
+        const res = await secureFetch(`/api/proxies/${id}/toggle`, { method: 'PUT' });
+        if (res && res.ok) loadDashboardData();
+    } catch (err) { console.error(err); }
+}
+
+async function toggleServer(id) {
+    try {
+        const res = await secureFetch(`/api/instances/${id}/toggle`, { method: 'PUT' });
+        if (res && res.ok) loadDashboardData();
+    } catch (err) { console.error(err); }
+}
+
+async function toggleUser(id) {
+    try {
+        const res = await secureFetch(`/api/users/${id}/toggle`, { method: 'PUT' });
+        if (res && res.ok) loadUsersData();
+    } catch (err) { console.error(err); }
+}
+
+async function toggleProvider(id) {
+    try {
+        const res = await secureFetch(`/api/oidc-providers/${id}/toggle`, { method: 'PUT' });
+        if (res && res.ok) loadProvidersData();
+    } catch (err) { console.error(err); }
+}

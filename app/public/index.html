@@ -243,6 +243,14 @@
                     </div>
                 </div>
 
+                <div class="switch-container" style="margin-top: 1rem;">
+                    <label class="switch">
+                        <input type="checkbox" id="proxy-enabled" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-weight: 500;">Enable Proxy Route</span>
+                </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="cancel-proxy-modal">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="save-proxy-btn">Save Route</button>
@@ -272,6 +280,14 @@
                 </div>
 
 
+
+                <div class="switch-container" style="margin-top: 1rem;">
+                    <label class="switch">
+                        <input type="checkbox" id="server-enabled" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-weight: 500;">Enable Server</span>
+                </div>
 
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="cancel-server-modal">Cancel</button>
@@ -339,6 +355,14 @@
                         <option value="">Any enabled Provider</option>
                         <!-- Dynamic OIDC provider options -->
                     </select>
+                </div>
+
+                <div class="switch-container" style="margin-top: 1rem;">
+                    <label class="switch">
+                        <input type="checkbox" id="user-enabled" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span style="font-weight: 500;">Enable User</span>
                 </div>
 
                 <div class="modal-footer">
@@ -431,7 +455,7 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>
 
