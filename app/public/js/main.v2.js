@@ -1028,6 +1028,61 @@ document.getElementById('add-proxy-btn').addEventListener('click', () => {
     document.getElementById('proxy-modal').classList.add('open');
 });
 
+document.getElementById('test-proxy-btn').addEventListener('click', async () => {
+    const target = document.getElementById('proxy-target').value.trim();
+    const host = document.getElementById('proxy-host').value.trim();
+    const tlsInsecure = document.getElementById('proxy-tls-insecure').checked;
+    const resultDiv = document.getElementById('test-proxy-result');
+    const btn = document.getElementById('test-proxy-btn');
+
+    if (!target) {
+        resultDiv.style.display = 'block';
+        resultDiv.style.color = 'var(--danger-color)';
+        resultDiv.textContent = '❌ Please enter a Target Destination first.';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    resultDiv.style.display = 'block';
+    resultDiv.style.color = 'var(--text-primary)';
+    resultDiv.textContent = 'Connecting to ' + target + '...';
+
+    try {
+        const res = await fetch('/api/proxies/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': localStorage.getItem('csrfToken')
+            },
+            body: JSON.stringify({ target, host, tlsInsecure })
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            resultDiv.style.color = 'var(--success-color)';
+            let out = `✅ Connection Successful (${data.timeTakenMs}ms)\n`;
+            out += `Status: HTTP ${data.status}\n\n`;
+            out += `--- Response Snippet ---\n`;
+            out += data.snippet ? data.snippet : '(Empty Response)';
+            resultDiv.textContent = out;
+        } else {
+            resultDiv.style.color = 'var(--danger-color)';
+            let out = `❌ Connection Failed (${data.timeTakenMs || 0}ms)\n`;
+            out += `Error: ${data.error}\n`;
+            if (data.code) out += `Code: ${data.code}\n`;
+            resultDiv.textContent = out;
+        }
+    } catch (err) {
+        resultDiv.style.color = 'var(--danger-color)';
+        resultDiv.textContent = '❌ Network Error: Failed to reach backend API.';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Test Connection';
+    }
+});
+
 // Helper to generate Caddy JSON from the form
 function generateRawJsonFromForm() {
     const target = document.getElementById('proxy-target').value.trim() || 'http://127.0.0.1:80';
@@ -1060,14 +1115,25 @@ function generateRawJsonFromForm() {
         }
         };
 
-        if (tlsInsecure && targetUrl.startsWith('https://')) {
-        handler.transport = {
-            protocol: "http",
-            tls: { 
-                insecure_skip_verify: true,
-                server_name: proxyHost
+        if (targetUrl.startsWith('https://')) {
+            let isIp = false;
+            try {
+                const u = new URL(targetUrl);
+                isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(u.hostname) || u.hostname.startsWith('[');
+            } catch(e) {}
+
+            handler.transport = {
+                protocol: "http",
+                tls: {}
+            };
+            
+            if (isIp && proxyHost) {
+                handler.transport.tls.server_name = proxyHost;
             }
-        };
+
+            if (tlsInsecure) {
+                handler.transport.tls.insecure_skip_verify = true;
+            }
         }
         return handler;
     };

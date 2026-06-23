@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import crypto from 'crypto';
+import http from 'http';
+import https from 'https';
 import { readDb, writeDb } from '../db.js';
 import { authenticateToken, csrfProtection } from '../middlewares/auth.js';
 import { syncCaddyConfig } from '../services/caddy.js';
@@ -9,6 +11,90 @@ const proxyRoutes = new Hono();
 proxyRoutes.get('/', authenticateToken, (c) => {
   const db = readDb();
   return c.json(db.proxies);
+});
+
+proxyRoutes.post('/test', authenticateToken, csrfProtection, async (c) => {
+  const { target, host, tlsInsecure } = await c.req.json();
+  if (!target) {
+    return c.json({ success: false, error: 'Target is required' }, 400);
+  }
+
+  let targetUrl = String(target).trim();
+  if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+    targetUrl = 'http://' + targetUrl;
+  }
+
+  try {
+    const u = new URL(targetUrl);
+    const isHttps = u.protocol === 'https:';
+    
+    const options = {
+      method: 'GET',
+      timeout: 5000,
+    };
+
+    if (isHttps) {
+      if (tlsInsecure) {
+        options.rejectUnauthorized = false;
+      }
+      
+      const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(u.hostname) || u.hostname.startsWith('[');
+      if (isIp && host) {
+        options.servername = String(host).trim().toLowerCase();
+      }
+    }
+
+    const reqLib = isHttps ? https : http;
+    const startTime = Date.now();
+
+    return new Promise((resolve) => {
+      const req = reqLib.request(u, options, (res) => {
+        const timeTaken = Date.now() - startTime;
+        let data = '';
+        
+        res.on('data', chunk => {
+          if (data.length < 1000) {
+            data += chunk;
+          }
+        });
+        
+        res.on('end', () => {
+          resolve(c.json({
+            success: true,
+            status: res.statusCode,
+            headers: res.headers,
+            timeTakenMs: timeTaken,
+            snippet: data.substring(0, 500)
+          }));
+        });
+      });
+
+      req.on('error', (e) => {
+        const timeTaken = Date.now() - startTime;
+        resolve(c.json({
+          success: false,
+          error: e.message,
+          code: e.code,
+          timeTakenMs: timeTaken
+        }));
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(c.json({
+          success: false,
+          error: 'Connection timed out',
+          code: 'ETIMEDOUT',
+          timeTakenMs: 5000
+        }));
+      });
+
+      req.end();
+    });
+
+  } catch (err) {
+    return c.json({ success: false, error: 'Invalid Target URL format', code: 'INVALID_URL' });
+  }
 });
 
 proxyRoutes.post('/', authenticateToken, csrfProtection, async (c) => {

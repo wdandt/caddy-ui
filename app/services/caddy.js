@@ -119,14 +119,25 @@ export async function syncCaddyConfig(instance, proxies) {
         }
       };
 
-      if (proxy.tlsInsecure && targetUrl.startsWith('https://')) {
+      if (targetUrl.startsWith('https://')) {
+        let isIp = false;
+        try {
+          const u = new URL(targetUrl);
+          isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(u.hostname) || u.hostname.startsWith('[');
+        } catch(e) {}
+        
         handler.transport = {
           protocol: "http",
-          tls: { 
-            insecure_skip_verify: true,
-            server_name: proxy.host
-          }
+          tls: {}
         };
+        
+        if (isIp && proxy.host) {
+          handler.transport.tls.server_name = proxy.host;
+        }
+
+        if (proxy.tlsInsecure) {
+          handler.transport.tls.insecure_skip_verify = true;
+        }
       }
       return handler;
     };
