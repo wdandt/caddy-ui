@@ -229,11 +229,12 @@
                     <div class="form-group">
                         <label for="proxy-target">Destination Target (Internal / Default Catch-all)</label>
                         <input type="text" id="proxy-target" placeholder="e.g. http://10.0.0.5:80 or https://coolify:443">
-                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem;">
-                            <input type="checkbox" id="proxy-tls-insecure" style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;">
-                            <label for="proxy-tls-insecure" style="margin: 0; font-size: 0.85rem; font-weight: 500; cursor: pointer; user-select: none;">
-                                Bypass Upstream TLS Verification (Insecure Skip Verify)
+                        <div class="switch-container" style="margin-top: 0.75rem; margin-bottom: 0;">
+                            <label class="switch">
+                                <input type="checkbox" id="proxy-tls-insecure">
+                                <span class="slider"></span>
                             </label>
+                            <label for="proxy-tls-insecure" style="font-size: 0.85rem; font-weight: 500; cursor: pointer; user-select: none; margin: 0;">Bypass Upstream TLS Verification (Insecure Skip Verify)</label>
                         </div>
                     </div>
 
