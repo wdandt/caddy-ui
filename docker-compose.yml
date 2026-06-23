@@ -9,9 +9,15 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/logs
     environment:
       CADDY_ADMIN: ${CADDY_ADMIN:-127.0.0.1:2019}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     command:
       - sh
       - -c
@@ -28,7 +34,13 @@ services:
     restart: unless-stopped
     network_mode: host
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   caddy_data:
   caddy_config:
+  caddy_logs:
