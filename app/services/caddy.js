@@ -122,7 +122,10 @@ export async function syncCaddyConfig(instance, proxies) {
       if (proxy.tlsInsecure && targetUrl.startsWith('https://')) {
         handler.transport = {
           protocol: "http",
-          tls: { insecure_skip_verify: true }
+          tls: { 
+            insecure_skip_verify: true,
+            server_name: proxy.host
+          }
         };
       }
       return handler;

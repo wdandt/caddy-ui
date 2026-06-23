@@ -240,12 +240,12 @@
 
                 <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1.5rem 0;">
 
-                <div class="form-group">
-                    <label for="proxy-config-type">Routing Configuration Mode</label>
-                    <select id="proxy-config-type" required>
-                        <option value="form">UI Form Builder</option>
-                        <option value="json">Raw Caddy JSON Config</option>
-                    </select>
+                <div class="switch-container" style="margin-top: 1.5rem; margin-bottom: 1.5rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: var(--radius-sm); border: 1px dashed var(--border-color);">
+                    <label class="switch">
+                        <input type="checkbox" id="proxy-use-json">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="proxy-use-json" style="font-size: 0.95rem; font-weight: 600; cursor: pointer; user-select: none; margin: 0;">Use Raw Caddy JSON Routing Config</label>
                 </div>
 
                 <!-- Form Builder Target Fields -->
@@ -281,7 +281,10 @@
                         <input type="file" id="proxy-json-file" accept=".json">
                     </div>
                     <div class="form-group">
-                        <label for="proxy-json-text">Raw Caddy JSON Array</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <label for="proxy-json-text" style="margin: 0;">Raw Caddy JSON Array</label>
+                            <button type="button" id="regenerate-json-btn" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;">⟳ Sync from Form</button>
+                        </div>
                         <textarea id="proxy-json-text" placeholder='[&#10;  {&#10;    "handle": [&#10;      {&#10;        "handler": "reverse_proxy",&#10;        "upstreams": [{ "dial": "10.0.0.5:80" }]&#10;      }&#10;    ]&#10;  }&#10;]' rows="10" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #34d399; font-family: monospace; font-size: 0.85rem; line-height: 1.4;"></textarea>
                         <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 0;">Provide a JSON array of Caddy route objects. These will be injected after authentication handlers.</p>
                     </div>

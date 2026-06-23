@@ -492,7 +492,7 @@ function openEditProxyModal(proxy) {
     toggleProxyAuthFields();
 
     const configMode = proxy.configMode || 'form';
-    document.getElementById('proxy-config-type').value = configMode;
+    document.getElementById('proxy-use-json').checked = configMode === 'json';
     
     if (configMode === 'json') {
         document.getElementById('proxy-form-builder-fields').classList.add('hidden');
@@ -503,6 +503,7 @@ function openEditProxyModal(proxy) {
     } else {
         document.getElementById('proxy-form-builder-fields').classList.remove('hidden');
         document.getElementById('proxy-raw-json-fields').classList.add('hidden');
+        document.getElementById('proxy-json-text').value = '';
         document.getElementById('proxy-target').value = proxy.target || '';
         if (document.getElementById('proxy-tls-insecure')) {
             document.getElementById('proxy-tls-insecure').checked = proxy.tlsInsecure === true;
@@ -520,7 +521,7 @@ function resetProxyModal() {
     document.getElementById('proxy-id').value = '';
     document.getElementById('proxy-modal-title').textContent = 'Add Proxy Route';
     
-    document.getElementById('proxy-config-type').value = 'form';
+    document.getElementById('proxy-use-json').checked = false;
     document.getElementById('proxy-form-builder-fields').classList.remove('hidden');
     document.getElementById('proxy-raw-json-fields').classList.add('hidden');
     document.getElementById('proxy-sso-group').classList.add('hidden');
@@ -537,7 +538,7 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const id = document.getElementById('proxy-id').value;
-    const configType = document.getElementById('proxy-config-type').value;
+    const configType = document.getElementById('proxy-use-json').checked ? 'json' : 'form';
     
     const instanceId = document.getElementById('proxy-server-select').value;
     const host = document.getElementById('proxy-host').value.trim();
@@ -1027,78 +1028,95 @@ document.getElementById('add-proxy-btn').addEventListener('click', () => {
     document.getElementById('proxy-modal').classList.add('open');
 });
 
+// Helper to generate Caddy JSON from the form
+function generateRawJsonFromForm() {
+    const target = document.getElementById('proxy-target').value.trim() || 'http://127.0.0.1:80';
+    const proxyHost = document.getElementById('proxy-host').value.trim() || 'app.domain.com';
+    const tlsInsecure = document.getElementById('proxy-tls-insecure') ? document.getElementById('proxy-tls-insecure').checked : false;
+    
+    const cleanDialTarget = (t) => {
+        let cleaned = t.replace(/^https?:\/\//, '');
+        if (!cleaned.includes(':')) {
+        cleaned += t.startsWith('https') ? ':443' : ':80';
+        }
+        return cleaned;
+    };
+
+    const createReverseProxyHandler = (targetUrl) => {
+        const handler = {
+        handler: "reverse_proxy",
+        upstreams: [{ dial: cleanDialTarget(targetUrl) }],
+        flush_interval: -1,
+        stream_close_delay: "10m",
+        headers: {
+            request: {
+            set: {
+                "X-Forwarded-Host": ["{http.request.host}"],
+                "X-Forwarded-Port": ["{http.request.port}"],
+                "X-Forwarded-Proto": ["{http.request.scheme}"],
+                "X-Real-Ip": ["{http.request.remote.host}"]
+            }
+            }
+        }
+        };
+
+        if (tlsInsecure && targetUrl.startsWith('https://')) {
+        handler.transport = {
+            protocol: "http",
+            tls: { 
+                insecure_skip_verify: true,
+                server_name: proxyHost
+            }
+        };
+        }
+        return handler;
+    };
+
+    const generatedRoutes = [];
+
+    // Advanced Routes
+    document.querySelectorAll('.advanced-route-row').forEach(row => {
+        const advPath = row.querySelector('.adv-path').value.trim();
+        const advTarget = row.querySelector('.adv-target').value.trim();
+        if (advPath && advTarget) {
+            generatedRoutes.push({
+                match: [{ path: [advPath] }],
+                handle: [createReverseProxyHandler(advTarget)]
+            });
+        }
+    });
+
+    // Main Target
+    if (target) {
+        generatedRoutes.push({
+            handle: [createReverseProxyHandler(target)]
+        });
+    }
+
+    document.getElementById('proxy-json-text').value = JSON.stringify(generatedRoutes, null, 2);
+}
+
 // Mode Toggling in Proxy Modal
-document.getElementById('proxy-config-type').addEventListener('change', () => {
-    const type = document.getElementById('proxy-config-type').value;
-    if (type === 'json') {
+document.getElementById('proxy-use-json').addEventListener('change', () => {
+    const isJson = document.getElementById('proxy-use-json').checked;
+    if (isJson) {
         document.getElementById('proxy-form-builder-fields').classList.add('hidden');
         document.getElementById('proxy-raw-json-fields').classList.remove('hidden');
         
-        if (!document.getElementById('proxy-json-text').value.trim()) {
-            const target = document.getElementById('proxy-target').value.trim() || 'http://127.0.0.1:80';
-            const tlsInsecure = document.getElementById('proxy-tls-insecure') ? document.getElementById('proxy-tls-insecure').checked : false;
-            
-            const cleanDialTarget = (t) => {
-              let cleaned = t.replace(/^https?:\/\//, '');
-              if (!cleaned.includes(':')) {
-                cleaned += t.startsWith('https') ? ':443' : ':80';
-              }
-              return cleaned;
-            };
-
-            const createReverseProxyHandler = (targetUrl) => {
-              const handler = {
-                handler: "reverse_proxy",
-                upstreams: [{ dial: cleanDialTarget(targetUrl) }],
-                flush_interval: -1,
-                stream_close_delay: "10m",
-                headers: {
-                  request: {
-                    set: {
-                      "X-Forwarded-Host": ["{http.request.host}"],
-                      "X-Forwarded-Port": ["{http.request.port}"],
-                      "X-Forwarded-Proto": ["{http.request.scheme}"],
-                      "X-Real-Ip": ["{http.request.remote.host}"]
-                    }
-                  }
-                }
-              };
-
-              if (tlsInsecure && targetUrl.startsWith('https://')) {
-                handler.transport = {
-                  protocol: "http",
-                  tls: { insecure_skip_verify: true }
-                };
-              }
-              return handler;
-            };
-
-            const generatedRoutes = [];
-
-            // Advanced Routes
-            document.querySelectorAll('.advanced-route-row').forEach(row => {
-                const advPath = row.querySelector('.adv-path').value.trim();
-                const advTarget = row.querySelector('.adv-target').value.trim();
-                if (advPath && advTarget) {
-                    generatedRoutes.push({
-                        match: [{ path: [advPath] }],
-                        handle: [createReverseProxyHandler(advTarget)]
-                    });
-                }
-            });
-
-            // Main Target
-            if (target) {
-                generatedRoutes.push({
-                    handle: [createReverseProxyHandler(target)]
-                });
-            }
-
-            document.getElementById('proxy-json-text').value = JSON.stringify(generatedRoutes, null, 2);
+        const currentJson = document.getElementById('proxy-json-text').value.trim();
+        if (!currentJson || currentJson === '[]' || currentJson === '[\n]' || currentJson === '') {
+            generateRawJsonFromForm();
         }
     } else {
         document.getElementById('proxy-form-builder-fields').classList.remove('hidden');
         document.getElementById('proxy-raw-json-fields').classList.add('hidden');
+    }
+});
+
+// Regenerate JSON manually
+document.getElementById('regenerate-json-btn')?.addEventListener('click', () => {
+    if (confirm('This will overwrite any custom JSON you have written below with the configuration from the Form Builder. Proceed?')) {
+        generateRawJsonFromForm();
     }
 });
 
