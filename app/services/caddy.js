@@ -112,17 +112,23 @@ export async function syncCaddyConfig(instance, proxies) {
             set: {
               "X-Forwarded-Host": ["{http.request.host}"],
               "X-Forwarded-Port": ["{http.request.port}"],
+              "X-Forwarded-Proto": ["{http.request.scheme}"],
               "X-Real-Ip": ["{http.request.remote.host}"]
             }
           }
         }
       };
 
-      if (proxy.tlsInsecure && targetUrl.startsWith('https://')) {
+      if (targetUrl.startsWith('https://')) {
         handler.transport = {
           protocol: "http",
-          tls: { insecure_skip_verify: true }
+          tls: {
+            server_name: "{http.request.host}"
+          }
         };
+        if (proxy.tlsInsecure) {
+          handler.transport.tls.insecure_skip_verify = true;
+        }
       }
       return handler;
     };

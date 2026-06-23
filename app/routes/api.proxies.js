@@ -58,7 +58,7 @@ proxyRoutes.post('/', authenticateToken, csrfProtection, async (c) => {
 
 proxyRoutes.put('/:id', authenticateToken, csrfProtection, async (c) => {
   const id = c.req.param('id');
-  const { host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials, enabled, tlsInsecure, advancedRoutes } = await c.req.json();
+  const { instanceId, host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials, enabled, tlsInsecure, advancedRoutes } = await c.req.json();
   const db = readDb();
   const proxyIndex = db.proxies.findIndex(p => p.id === id);
 
@@ -89,22 +89,34 @@ proxyRoutes.put('/:id', authenticateToken, csrfProtection, async (c) => {
     basicAuthCredentials: credentials,
     enabled: enabled !== undefined ? Boolean(enabled) : currentProxy.enabled,
     tlsInsecure: tlsInsecure !== undefined ? Boolean(tlsInsecure) : currentProxy.tlsInsecure,
-    advancedRoutes: advancedRoutes !== undefined ? (Array.isArray(advancedRoutes) ? advancedRoutes : []) : (currentProxy.advancedRoutes || [])
+    advancedRoutes: advancedRoutes !== undefined ? (Array.isArray(advancedRoutes) ? advancedRoutes : []) : (currentProxy.advancedRoutes || []),
+    instanceId: instanceId ? String(instanceId) : currentProxy.instanceId
   };
 
   db.proxies[proxyIndex] = updatedProxy;
   writeDb(db);
 
-  const instance = db.instances.find(i => i.id === updatedProxy.instanceId);
-  if (instance) {
+  const oldInstanceId = currentProxy.instanceId;
+  const newInstanceId = updatedProxy.instanceId;
+
+  const newInstance = db.instances.find(i => i.id === newInstanceId);
+  const oldInstance = db.instances.find(i => i.id === oldInstanceId);
+
+  if (newInstance) {
     try {
-      await syncCaddyConfig(instance, db.proxies);
+      await syncCaddyConfig(newInstance, db.proxies);
+      
+      // If the instance changed, we must also sync the old instance to remove the route from it
+      if (oldInstanceId !== newInstanceId && oldInstance) {
+        await syncCaddyConfig(oldInstance, db.proxies);
+      }
+      
       return c.json({ proxy: updatedProxy, synced: true });
     } catch (err) {
       return c.json({ proxy: updatedProxy, synced: false, syncError: err.message });
     }
   } else {
-    return c.json({ proxy: updatedProxy, synced: false, syncError: 'Instance not found' });
+    return c.json({ proxy: updatedProxy, synced: false, syncError: 'Target instance not found' });
   }
 });
 
