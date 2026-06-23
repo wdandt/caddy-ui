@@ -1,4 +1,5 @@
 import { JWT_SECRET } from '../utils/crypto.js';
+import { readDb } from '../db.js';
 
 export function cleanDialTarget(target) {
   let clean = target.replace(/^(https?:\/\/)/, '');
@@ -102,27 +103,41 @@ export async function syncCaddyConfig(instance, proxies) {
     }
 
     const createReverseProxyHandler = (targetUrl) => {
+      const dialTarget = cleanDialTarget(targetUrl);
+      const isHttpsTarget = targetUrl.startsWith('https://') || dialTarget.endsWith(':443');
+
+      // Fetch global trusted proxies
+      let trustedProxiesArray = [];
+      try {
+        const db = readDb();
+        if (db.globalSettings && db.globalSettings.trustedProxies) {
+          trustedProxiesArray = db.globalSettings.trustedProxies
+            .split(',')
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+        }
+      } catch (e) {}
+
       const handler = {
         handler: "reverse_proxy",
-        upstreams: [{ dial: cleanDialTarget(targetUrl) }],
+        upstreams: [{ dial: dialTarget }],
+        trusted_proxies: trustedProxiesArray.length > 0 ? trustedProxiesArray : undefined,
         flush_interval: -1,
         stream_close_delay: "10m",
         headers: {
           request: {
             set: {
               "X-Forwarded-Host": ["{http.request.host}"],
-              "X-Forwarded-Port": ["{http.request.port}"],
-              "X-Forwarded-Proto": ["{http.request.scheme}"],
               "X-Real-Ip": ["{http.request.remote.host}"]
             }
           }
         }
       };
 
-      if (targetUrl.startsWith('https://')) {
+      if (isHttpsTarget) {
         let isIp = false;
         try {
-          const u = new URL(targetUrl);
+          const u = new URL(targetUrl.startsWith('http') ? targetUrl : 'https://' + targetUrl);
           isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(u.hostname) || u.hostname.startsWith('[');
         } catch(e) {}
         

@@ -145,6 +145,18 @@
                                  <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Auth Settings</button>
                             </form>
                         </div>
+                        <!-- Global Proxy Settings -->
+                        <div class="glass" style="padding: 2rem; border-radius: var(--radius-md);">
+                            <h3 style="margin-bottom: 1.25rem; font-size: 1.25rem; font-weight: 600;">Global Proxy Settings</h3>
+                            <form id="global-settings-form">
+                                <div class="form-group">
+                                    <label for="global-trusted-proxies">Trusted Proxies (CIDR ranges, comma-separated)</label>
+                                    <textarea id="global-trusted-proxies" rows="3" placeholder="127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-family: monospace; font-size: 0.85rem; line-height: 1.4;"></textarea>
+                                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 0;">Caddy will trust X-Forwarded-* headers from these IP ranges (e.g., Cloudflare Tunnels, Docker networking).</p>
+                                </div>
+                                <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Proxy Settings</button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </section>

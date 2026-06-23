@@ -71,6 +71,33 @@ systemRoutes.post('/dashboard-auth-config', authenticateToken, csrfProtection, a
   return c.json({ success: true });
 });
 
+systemRoutes.get('/global-settings', authenticateToken, (c) => {
+  const db = readDb();
+  return c.json(db.globalSettings || { trustedProxies: '' });
+});
+
+systemRoutes.post('/global-settings', authenticateToken, csrfProtection, async (c) => {
+  const { trustedProxies } = await c.req.json();
+  const db = readDb();
+  db.globalSettings = {
+    trustedProxies: String(trustedProxies || '').trim()
+  };
+  writeDb(db);
+  
+  // Trigger a background sync for all active instances
+  setTimeout(async () => {
+    for (const instance of db.instances) {
+      if (instance.enabled !== false) {
+        try {
+          await syncCaddyConfig(instance, db.proxies);
+        } catch(e) {}
+      }
+    }
+  }, 100);
+
+  return c.json({ success: true });
+});
+
 systemRoutes.get('/status', authenticateToken, async (c) => {
   const db = readDb();
 

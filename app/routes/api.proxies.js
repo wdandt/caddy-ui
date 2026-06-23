@@ -39,7 +39,11 @@ proxyRoutes.post('/test', authenticateToken, csrfProtection, async (c) => {
   // --- Step 2: Upstream Check ---
   let targetUrl = String(target).trim();
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-    targetUrl = 'http://' + targetUrl;
+    if (targetUrl.split('/')[0].endsWith(':443')) {
+      targetUrl = 'https://' + targetUrl;
+    } else {
+      targetUrl = 'http://' + targetUrl;
+    }
   }
 
   try {

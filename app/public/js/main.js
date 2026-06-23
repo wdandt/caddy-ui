@@ -773,7 +773,8 @@ async function loadSettings() {
     await Promise.all([
         loadAdminCredentials(),
         loadDashboardAuthConfig(),
-        renderDashboard2FASettings()
+        renderDashboard2FASettings(),
+        loadGlobalSettings()
     ]);
 }
 
@@ -868,6 +869,41 @@ document.getElementById('dashboard-auth-form').addEventListener('submit', async 
         alert('Failed to save dashboard auth settings');
     }
 });
+
+// --- Global Settings Form Submit & Load ---
+async function loadGlobalSettings() {
+    try {
+        const res = await secureFetch('/api/global-settings');
+        if (!res) return;
+        const config = await res.json();
+        document.getElementById('global-trusted-proxies').value = config.trustedProxies || '';
+    } catch (err) {
+        console.error('Error fetching global settings:', err);
+    }
+}
+
+const globalSettingsForm = document.getElementById('global-settings-form');
+if (globalSettingsForm) {
+    globalSettingsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const trustedProxies = document.getElementById('global-trusted-proxies').value;
+        try {
+            const res = await secureFetch('/api/global-settings', {
+                method: 'POST',
+                body: { trustedProxies }
+            });
+            if (res && res.ok) {
+                alert('Global proxy settings saved successfully! Caddy configuration is syncing in the background.');
+                await loadGlobalSettings();
+            } else {
+                const err = await res.json();
+                alert(`Error saving proxy settings: ${err.error}`);
+            }
+        } catch (err) {
+            alert('Failed to save global proxy settings');
+        }
+    });
+}
 
 // --- Dashboard Personal 2FA Actions & Rendering ---
 async function renderDashboard2FASettings() {

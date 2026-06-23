@@ -52,6 +52,9 @@ export async function initDb() {
     dashboardAuthConfig: {
       ssoOnly: false,
       allowedProviderIds: []
+    },
+    globalSettings: {
+      trustedProxies: "127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1/128, fc00::/7"
     }
   };
 
@@ -150,6 +153,11 @@ export async function initDb() {
         ? [db.dashboardAuthConfig.defaultProviderId]
         : [];
       delete db.dashboardAuthConfig.defaultProviderId;
+      modified = true;
+    }
+
+    if (!db.globalSettings) {
+      db.globalSettings = defaultDbStructure.globalSettings;
       modified = true;
     }
 
