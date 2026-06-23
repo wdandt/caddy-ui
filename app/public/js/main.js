@@ -1036,17 +1036,65 @@ document.getElementById('proxy-config-type').addEventListener('change', () => {
         
         if (!document.getElementById('proxy-json-text').value.trim()) {
             const target = document.getElementById('proxy-target').value.trim() || 'http://127.0.0.1:80';
-            const defaultObj = [
-              {
-                "handle": [
-                  {
-                    "handler": "reverse_proxy",
-                    "upstreams": [{ "dial": target }]
-                  }
-                ]
+            const tlsInsecure = document.getElementById('proxy-tls-insecure') ? document.getElementById('proxy-tls-insecure').checked : false;
+            
+            const cleanDialTarget = (t) => {
+              let cleaned = t.replace(/^https?:\/\//, '');
+              if (!cleaned.includes(':')) {
+                cleaned += t.startsWith('https') ? ':443' : ':80';
               }
-            ];
-            document.getElementById('proxy-json-text').value = JSON.stringify(defaultObj, null, 2);
+              return cleaned;
+            };
+
+            const createReverseProxyHandler = (targetUrl) => {
+              const handler = {
+                handler: "reverse_proxy",
+                upstreams: [{ dial: cleanDialTarget(targetUrl) }],
+                flush_interval: -1,
+                stream_close_delay: "10m",
+                headers: {
+                  request: {
+                    set: {
+                      "X-Forwarded-Host": ["{http.request.host}"],
+                      "X-Forwarded-Port": ["{http.request.port}"],
+                      "X-Forwarded-Proto": ["{http.request.scheme}"],
+                      "X-Real-Ip": ["{http.request.remote.host}"]
+                    }
+                  }
+                }
+              };
+
+              if (tlsInsecure && targetUrl.startsWith('https://')) {
+                handler.transport = {
+                  protocol: "http",
+                  tls: { insecure_skip_verify: true }
+                };
+              }
+              return handler;
+            };
+
+            const generatedRoutes = [];
+
+            // Advanced Routes
+            document.querySelectorAll('.advanced-route-row').forEach(row => {
+                const advPath = row.querySelector('.adv-path').value.trim();
+                const advTarget = row.querySelector('.adv-target').value.trim();
+                if (advPath && advTarget) {
+                    generatedRoutes.push({
+                        match: [{ path: [advPath] }],
+                        handle: [createReverseProxyHandler(advTarget)]
+                    });
+                }
+            });
+
+            // Main Target
+            if (target) {
+                generatedRoutes.push({
+                    handle: [createReverseProxyHandler(target)]
+                });
+            }
+
+            document.getElementById('proxy-json-text').value = JSON.stringify(generatedRoutes, null, 2);
         }
     } else {
         document.getElementById('proxy-form-builder-fields').classList.remove('hidden');
