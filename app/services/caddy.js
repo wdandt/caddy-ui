@@ -119,32 +119,42 @@ export async function syncCaddyConfig(instance, proxies) {
         }
       };
 
-      if (targetUrl.startsWith('https://')) {
+      if (proxy.tlsInsecure && targetUrl.startsWith('https://')) {
         handler.transport = {
           protocol: "http",
-          tls: {
-            server_name: "{http.request.host}"
-          }
+          tls: { insecure_skip_verify: true }
         };
-        if (proxy.tlsInsecure) {
-          handler.transport.tls.insecure_skip_verify = true;
-        }
       }
       return handler;
     };
 
-    if (proxy.advancedRoutes && proxy.advancedRoutes.length > 0) {
-      proxy.advancedRoutes.forEach(adv => {
-        innerRoutes.push({
-          match: [{ path: [adv.path] }],
-          handle: [createReverseProxyHandler(adv.target)]
+    if (proxy.configMode === 'json' && proxy.rawCaddyConfig) {
+      try {
+        const customRoutes = typeof proxy.rawCaddyConfig === 'string' ? JSON.parse(proxy.rawCaddyConfig) : proxy.rawCaddyConfig;
+        if (Array.isArray(customRoutes)) {
+          innerRoutes.push(...customRoutes);
+        } else if (typeof customRoutes === 'object') {
+          innerRoutes.push(customRoutes);
+        }
+      } catch (e) {
+        console.error("Invalid raw Caddy config JSON for proxy", proxy.id, e);
+      }
+    } else {
+      if (proxy.advancedRoutes && proxy.advancedRoutes.length > 0) {
+        proxy.advancedRoutes.forEach(adv => {
+          innerRoutes.push({
+            match: [{ path: [adv.path] }],
+            handle: [createReverseProxyHandler(adv.target)]
+          });
         });
-      });
-    }
+      }
 
-    innerRoutes.push({
-      handle: [createReverseProxyHandler(proxy.target)]
-    });
+      if (proxy.target) {
+        innerRoutes.push({
+          handle: [createReverseProxyHandler(proxy.target)]
+        });
+      }
+    }
 
     return {
       match: [

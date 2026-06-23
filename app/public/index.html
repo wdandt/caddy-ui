@@ -206,27 +206,50 @@
                 <input type="hidden" id="proxy-id">
                 
                 <div class="form-group">
-                    <label for="proxy-config-type">Configuration Mode</label>
-                    <select id="proxy-config-type" required>
-                        <option value="form">UI Form Builder</option>
-                        <option value="json">Raw JSON Config</option>
+                    <label for="proxy-server-select">Caddy Server</label>
+                    <select id="proxy-server-select">
+                        <!-- Dynamic options -->
                     </select>
                 </div>
 
-                <!-- Form Builder Fields -->
+                <div class="form-group">
+                    <label for="proxy-host">Domain Hostname (Public)</label>
+                    <input type="text" id="proxy-host" placeholder="e.g. app.domain.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="proxy-auth-mode">Protection / Authentication Mode</label>
+                    <select id="proxy-auth-mode">
+                        <option value="none">Public (None)</option>
+                        <option value="sso">SSO (Forward Auth)</option>
+                        <option value="basic">HTTP Basic Auth</option>
+                    </select>
+                </div>
+
+                <div class="form-group hidden" id="proxy-sso-group">
+                    <label for="proxy-sso-provider">SSO Provider</label>
+                    <select id="proxy-sso-provider">
+                        <!-- Dynamic options -->
+                    </select>
+                </div>
+
+                <div class="form-group hidden" id="proxy-basic-group">
+                    <label for="proxy-basic-credentials">Basic Auth Credentials (one per line, format: `username:password`)</label>
+                    <textarea id="proxy-basic-credentials" placeholder="e.g.&#10;user1:my_secure_pass_123&#10;user2:another_pass_456" rows="4" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-family: monospace;"></textarea>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1.5rem 0;">
+
+                <div class="form-group">
+                    <label for="proxy-config-type">Routing Configuration Mode</label>
+                    <select id="proxy-config-type" required>
+                        <option value="form">UI Form Builder</option>
+                        <option value="json">Raw Caddy JSON Config</option>
+                    </select>
+                </div>
+
+                <!-- Form Builder Target Fields -->
                 <div id="proxy-form-builder-fields">
-                    <div class="form-group">
-                        <label for="proxy-server-select">Caddy Server</label>
-                        <select id="proxy-server-select">
-                            <!-- Dynamic options -->
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="proxy-host">Domain Hostname (Public)</label>
-                        <input type="text" id="proxy-host" placeholder="e.g. app.domain.com">
-                    </div>
-
                     <div class="form-group">
                         <label for="proxy-target">Destination Target (Internal / Default Catch-all)</label>
                         <input type="text" id="proxy-target" placeholder="e.g. http://10.0.0.5:80 or https://coolify:443">
@@ -249,38 +272,18 @@
                         </div>
                         <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 0;">Use this to route specific paths (e.g. `/app/*`) to different targets (e.g. `http://10.0.0.5:6001`).</p>
                     </div>
-
-                    <div class="form-group">
-                        <label for="proxy-auth-mode">Protection / Authentication Mode</label>
-                        <select id="proxy-auth-mode">
-                            <option value="none">Public (None)</option>
-                            <option value="sso">SSO (Forward Auth)</option>
-                            <option value="basic">HTTP Basic Auth</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group hidden" id="proxy-sso-group">
-                        <label for="proxy-sso-provider">SSO Provider</label>
-                        <select id="proxy-sso-provider">
-                            <!-- Dynamic options -->
-                        </select>
-                    </div>
-
-                    <div class="form-group hidden" id="proxy-basic-group">
-                        <label for="proxy-basic-credentials">Basic Auth Credentials (one per line, format: `username:password`)</label>
-                        <textarea id="proxy-basic-credentials" placeholder="e.g.&#10;user1:my_secure_pass_123&#10;user2:another_pass_456" rows="4" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-family: monospace;"></textarea>
-                    </div>
                 </div>
 
                 <!-- Raw JSON Fields -->
                 <div id="proxy-raw-json-fields" class="hidden">
                     <div class="form-group">
-                        <label for="proxy-json-file">Upload JSON Config File</label>
+                        <label for="proxy-json-file">Upload JSON Route Array File</label>
                         <input type="file" id="proxy-json-file" accept=".json">
                     </div>
                     <div class="form-group">
-                        <label for="proxy-json-text">Raw JSON Configuration String</label>
-                        <textarea id="proxy-json-text" placeholder='{&#10;  "instanceId": "local",&#10;  "host": "app.domain.com",&#10;  "target": "http://127.0.0.1:8080",&#10;  "authMode": "none"&#10;}' rows="10" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #34d399; font-family: monospace; font-size: 0.85rem; line-height: 1.4;"></textarea>
+                        <label for="proxy-json-text">Raw Caddy JSON Array</label>
+                        <textarea id="proxy-json-text" placeholder='[&#10;  {&#10;    "handle": [&#10;      {&#10;        "handler": "reverse_proxy",&#10;        "upstreams": [{ "dial": "10.0.0.5:80" }]&#10;      }&#10;    ]&#10;  }&#10;]' rows="10" style="width:100%; padding: 0.75rem 1rem; background-color: rgba(10, 14, 25, 0.5); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #34d399; font-family: monospace; font-size: 0.85rem; line-height: 1.4;"></textarea>
+                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 0;">Provide a JSON array of Caddy route objects. These will be injected after authentication handlers.</p>
                     </div>
                 </div>
 

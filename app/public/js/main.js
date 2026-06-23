@@ -471,12 +471,7 @@ function openEditProxyModal(proxy) {
     document.getElementById('proxy-id').value = proxy.id;
     document.getElementById('proxy-server-select').value = proxy.instanceId;
     document.getElementById('proxy-host').value = proxy.host;
-    document.getElementById('proxy-target').value = proxy.target;
     document.getElementById('proxy-enabled').checked = proxy.enabled !== false;
-    if (document.getElementById('proxy-tls-insecure')) {
-        document.getElementById('proxy-tls-insecure').checked = proxy.tlsInsecure === true;
-    }
-    renderAdvancedRoutes(proxy.advancedRoutes || []);
     
     let authMode = proxy.authMode;
     if (!authMode) {
@@ -495,6 +490,25 @@ function openEditProxyModal(proxy) {
     }
 
     toggleProxyAuthFields();
+
+    const configMode = proxy.configMode || 'form';
+    document.getElementById('proxy-config-type').value = configMode;
+    
+    if (configMode === 'json') {
+        document.getElementById('proxy-form-builder-fields').classList.add('hidden');
+        document.getElementById('proxy-raw-json-fields').classList.remove('hidden');
+        document.getElementById('proxy-json-text').value = typeof proxy.rawCaddyConfig === 'string' 
+            ? proxy.rawCaddyConfig 
+            : JSON.stringify(proxy.rawCaddyConfig || [], null, 2);
+    } else {
+        document.getElementById('proxy-form-builder-fields').classList.remove('hidden');
+        document.getElementById('proxy-raw-json-fields').classList.add('hidden');
+        document.getElementById('proxy-target').value = proxy.target || '';
+        if (document.getElementById('proxy-tls-insecure')) {
+            document.getElementById('proxy-tls-insecure').checked = proxy.tlsInsecure === true;
+        }
+        renderAdvancedRoutes(proxy.advancedRoutes || []);
+    }
     
     document.getElementById('proxy-modal').classList.add('open');
 }
@@ -525,42 +539,48 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
     const id = document.getElementById('proxy-id').value;
     const configType = document.getElementById('proxy-config-type').value;
     
-    let payload = {};
+    const instanceId = document.getElementById('proxy-server-select').value;
+    const host = document.getElementById('proxy-host').value.trim();
+    const enabled = document.getElementById('proxy-enabled').checked;
+    
+    const authMode = document.getElementById('proxy-auth-mode').value;
+    const ssoProviderId = authMode === 'sso' ? document.getElementById('proxy-sso-provider').value : null;
+    const ssoEnabled = authMode === 'sso';
+    
+    const credLines = document.getElementById('proxy-basic-credentials').value.split('\n');
+    const basicAuthCredentials = [];
+    credLines.forEach(line => {
+        const parts = line.split(':');
+        const username = parts[0]?.trim();
+        const password = parts.slice(1).join(':')?.trim();
+        if (username) {
+            basicAuthCredentials.push({ username, password });
+        }
+    });
+
+    let payload = {
+        instanceId,
+        host,
+        enabled,
+        authMode,
+        ssoProviderId,
+        ssoEnabled,
+        basicAuthCredentials,
+        configMode: configType
+    };
     
     if (configType === 'json') {
         try {
-            const rawJson = document.getElementById('proxy-json-text').value.trim();
-            payload = JSON.parse(rawJson);
-            if (!payload.instanceId || !payload.host || !payload.target) {
-                alert('JSON config must contain at least "instanceId", "host", and "target" fields.');
-                return;
-            }
+            const rawJson = document.getElementById('proxy-json-text').value.trim() || '[]';
+            JSON.parse(rawJson); // Validate JSON format
+            payload.rawCaddyConfig = rawJson;
         } catch (err) {
             alert('Invalid JSON syntax: ' + err.message);
             return;
         }
     } else {
-        const instanceId = document.getElementById('proxy-server-select').value;
-        const host = document.getElementById('proxy-host').value.trim();
-        const target = document.getElementById('proxy-target').value.trim();
-        
-        const authMode = document.getElementById('proxy-auth-mode').value;
-        const ssoProviderId = authMode === 'sso' ? document.getElementById('proxy-sso-provider').value : null;
-        
-        const credLines = document.getElementById('proxy-basic-credentials').value.split('\n');
-        const basicAuthCredentials = [];
-        credLines.forEach(line => {
-            const parts = line.split(':');
-            const username = parts[0]?.trim();
-            const password = parts.slice(1).join(':')?.trim();
-            if (username) {
-                basicAuthCredentials.push({ username, password });
-            }
-        });
-
-        const ssoEnabled = authMode === 'sso';
-        const enabled = document.getElementById('proxy-enabled').checked;
-        const tlsInsecure = document.getElementById('proxy-tls-insecure') ? document.getElementById('proxy-tls-insecure').checked : false;
+        payload.target = document.getElementById('proxy-target').value.trim();
+        payload.tlsInsecure = document.getElementById('proxy-tls-insecure') ? document.getElementById('proxy-tls-insecure').checked : false;
         
         const advancedRoutes = [];
         document.querySelectorAll('.advanced-route-row').forEach(row => {
@@ -570,19 +590,7 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
                 advancedRoutes.push({ path, target });
             }
         });
-
-        payload = { 
-            instanceId, 
-            host, 
-            target, 
-            ssoEnabled, 
-            authMode, 
-            ssoProviderId, 
-            basicAuthCredentials, 
-            enabled,
-            tlsInsecure,
-            advancedRoutes
-        };
+        payload.advancedRoutes = advancedRoutes;
     }
     
     const method = id ? 'PUT' : 'POST';
@@ -1026,36 +1034,19 @@ document.getElementById('proxy-config-type').addEventListener('change', () => {
         document.getElementById('proxy-form-builder-fields').classList.add('hidden');
         document.getElementById('proxy-raw-json-fields').classList.remove('hidden');
         
-        // If we have some values, construct default JSON to help user
-        const instanceId = document.getElementById('proxy-server-select').value;
-        const host = document.getElementById('proxy-host').value.trim();
-        const target = document.getElementById('proxy-target').value.trim();
-        const authMode = document.getElementById('proxy-auth-mode').value;
-        const ssoProviderId = document.getElementById('proxy-sso-provider').value || null;
-        
-        const defaultObj = {
-            instanceId: instanceId || 'local',
-            host: host || 'app.domain.com',
-            target: target || 'http://127.0.0.1:8080',
-            authMode: authMode || 'none'
-        };
-        if (authMode === 'sso' && ssoProviderId) {
-            defaultObj.ssoProviderId = ssoProviderId;
-        }
-        if (authMode === 'basic') {
-            const credLines = document.getElementById('proxy-basic-credentials').value.split('\n');
-            defaultObj.basicAuthCredentials = [];
-            credLines.forEach(line => {
-                const parts = line.split(':');
-                const username = parts[0]?.trim();
-                const password = parts.slice(1).join(':')?.trim();
-                if (username) defaultObj.basicAuthCredentials.push({ username, password });
-            });
-        }
-        
-        const textarea = document.getElementById('proxy-json-text');
-        if (!textarea.value.trim()) {
-            textarea.value = JSON.stringify(defaultObj, null, 2);
+        if (!document.getElementById('proxy-json-text').value.trim()) {
+            const target = document.getElementById('proxy-target').value.trim() || 'http://127.0.0.1:80';
+            const defaultObj = [
+              {
+                "handle": [
+                  {
+                    "handler": "reverse_proxy",
+                    "upstreams": [{ "dial": target }]
+                  }
+                ]
+              }
+            ];
+            document.getElementById('proxy-json-text').value = JSON.stringify(defaultObj, null, 2);
         }
     } else {
         document.getElementById('proxy-form-builder-fields').classList.remove('hidden');
