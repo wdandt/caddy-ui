@@ -82,9 +82,13 @@ proxyRoutes.post('/test', authenticateToken, csrfProtection, async (c) => {
         let snippet = '';
         res.on('data', chunk => { if (snippet.length < 500) snippet += chunk; });
         res.on('end', () => {
+          let detailsStr = `HTTP ${res.statusCode} (${timeTaken}ms)`;
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            detailsStr += ` -> Redirect to ${res.headers.location}`;
+          }
           resolve({
             status: 'success',
-            details: `HTTP ${res.statusCode} (${timeTaken}ms)`,
+            details: detailsStr,
             error: '',
             snippet: snippet.substring(0, 500)
           });
@@ -106,8 +110,13 @@ proxyRoutes.post('/test', authenticateToken, csrfProtection, async (c) => {
         const startTime = Date.now();
         const req = https.request(pubU, { method: 'GET', timeout: 5000 }, (res) => {
           const timeTaken = Date.now() - startTime;
+          let detailsStr = `HTTP ${res.statusCode} (${timeTaken}ms)`;
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            detailsStr += ` -> Redirect to ${res.headers.location}`;
+          }
+          
           if (res.statusCode >= 200 && res.statusCode < 400) {
-            resolve({ status: 'success', details: `HTTP ${res.statusCode} (${timeTaken}ms)`, error: '' });
+            resolve({ status: 'success', details: detailsStr, error: '' });
           } else {
             resolve({ status: 'error', error: `HTTP ${res.statusCode}`, details: `Public endpoint returned error (${timeTaken}ms)` });
           }

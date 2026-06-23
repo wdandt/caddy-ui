@@ -146,6 +146,13 @@ function renderProxyList() {
         editBtn.textContent = 'Edit';
         editBtn.addEventListener('click', () => openEditProxyModal(proxy));
 
+        const testBtn = document.createElement('button');
+        testBtn.className = 'btn btn-secondary';
+        testBtn.style.padding = '0.4rem 0.8rem';
+        testBtn.style.fontSize = '0.85rem';
+        testBtn.style.marginRight = '0.5rem';
+        testBtn.textContent = '⚡ Test';
+
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-danger';
         deleteBtn.style.padding = '0.4rem 0.8rem';
@@ -162,12 +169,30 @@ function renderProxyList() {
         toggleBtn.addEventListener('click', () => toggleProxyRoute(proxy.id));
         actionsCol.appendChild(toggleBtn);
         actionsCol.appendChild(editBtn);
+        actionsCol.appendChild(testBtn);
         actionsCol.appendChild(deleteBtn);
+
+        const diagDiv = document.createElement('div');
+        diagDiv.className = 'proxy-diag-result';
+        diagDiv.style.display = 'none';
+        diagDiv.style.gridColumn = '1 / -1';
+        diagDiv.style.marginTop = '0.2rem';
+        diagDiv.style.padding = '0.75rem';
+        diagDiv.style.borderRadius = 'var(--radius-sm)';
+        diagDiv.style.fontSize = '0.85rem';
+        diagDiv.style.fontFamily = 'monospace';
+        diagDiv.style.whiteSpace = 'pre-wrap';
+        diagDiv.style.wordBreak = 'break-all';
+        diagDiv.style.background = 'rgba(0,0,0,0.3)';
+        diagDiv.style.border = '1px solid var(--border-color)';
+
+        testBtn.addEventListener('click', () => runDiagnosticsForList(proxy, testBtn, diagDiv));
 
         card.appendChild(hostCol);
         card.appendChild(targetCol);
         card.appendChild(ssoCol);
         card.appendChild(actionsCol);
+        card.appendChild(diagDiv);
 
         container.appendChild(card);
     });
@@ -1101,6 +1126,76 @@ document.getElementById('test-proxy-btn').addEventListener('click', async () => 
         btn.textContent = '⚡ Run Diagnostics';
     }
 });
+
+async function runDiagnosticsForList(proxy, testBtn, diagDiv) {
+    if (testBtn.disabled) return;
+    
+    if (diagDiv.style.display === 'block' && testBtn.textContent !== 'Testing...') {
+        // Toggle hide if already showing
+        diagDiv.style.display = 'none';
+        return;
+    }
+
+    testBtn.disabled = true;
+    const oldText = testBtn.textContent;
+    testBtn.textContent = 'Testing...';
+    diagDiv.style.display = 'block';
+    diagDiv.style.color = 'var(--text-primary)';
+    diagDiv.textContent = 'Connecting to ' + proxy.target + '...';
+
+    try {
+        const res = await secureFetch('/api/proxies/test', {
+            method: 'POST',
+            silent: true,
+            body: { target: proxy.target, host: proxy.host, tlsInsecure: proxy.tlsInsecure }
+        });
+        
+        if (!res) {
+            throw new Error('Network or session error');
+        }
+        const data = await res.json();
+        
+        if (data.success && data.results) {
+            const { dns, upstream, public: pub } = data.results;
+            
+            let out = `🚀 Diagnostics Report\n`;
+            out += `------------------------\n`;
+            
+            const formatStep = (name, res) => {
+                if (res.status === 'success') return `[✅] ${name}: ${res.details}\n`;
+                if (res.status === 'skipped') return `[➖] ${name}: ${res.details}\n`;
+                return `[❌] ${name}: ${res.error || 'Failed'} (${res.details})\n`;
+            };
+
+            out += formatStep('DNS Lookup', dns);
+            out += formatStep('Internal Target', upstream);
+            out += formatStep('Public Domain', pub);
+
+            if (upstream.snippet) {
+                out += `\n--- Target Response Snippet ---\n`;
+                out += upstream.snippet;
+            }
+
+            diagDiv.style.color = 'var(--text-primary)';
+            if (upstream.status === 'error' || pub.status === 'error') {
+                diagDiv.style.color = 'var(--danger-color)';
+            } else if (upstream.status === 'success') {
+                diagDiv.style.color = 'var(--success-color)';
+            }
+            
+            diagDiv.textContent = out;
+        } else {
+            diagDiv.style.color = 'var(--danger-color)';
+            diagDiv.textContent = `❌ Diagnostics Failed\nError: ${data.error || 'Unknown error'}`;
+        }
+    } catch (err) {
+        diagDiv.style.color = 'var(--danger-color)';
+        diagDiv.textContent = '❌ Network Error: Failed to reach backend API.';
+    } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = oldText;
+    }
+}
 
 // Helper to generate Caddy JSON from the form
 function generateRawJsonFromForm() {
