@@ -1060,26 +1060,45 @@ document.getElementById('test-proxy-btn').addEventListener('click', async () => 
         }
         const data = await res.json();
         
-        if (data.success) {
-            resultDiv.style.color = 'var(--success-color)';
-            let out = `✅ Connection Successful (${data.timeTakenMs}ms)\n`;
-            out += `Status: HTTP ${data.status}\n\n`;
-            out += `--- Response Snippet ---\n`;
-            out += data.snippet ? data.snippet : '(Empty Response)';
+        if (data.success && data.results) {
+            const { dns, upstream, public: pub } = data.results;
+            
+            let out = `🚀 Diagnostics Report\n`;
+            out += `------------------------\n`;
+            
+            const formatStep = (name, res) => {
+                if (res.status === 'success') return `[✅] ${name}: ${res.details}\n`;
+                if (res.status === 'skipped') return `[➖] ${name}: ${res.details}\n`;
+                return `[❌] ${name}: ${res.error || 'Failed'} (${res.details})\n`;
+            };
+
+            out += formatStep('DNS Lookup', dns);
+            out += formatStep('Internal Target', upstream);
+            out += formatStep('Public Domain', pub);
+
+            if (upstream.snippet) {
+                out += `\n--- Target Response Snippet ---\n`;
+                out += upstream.snippet;
+            }
+
+            resultDiv.style.color = 'var(--text-primary)';
+            if (upstream.status === 'error' || pub.status === 'error') {
+                resultDiv.style.color = 'var(--danger-color)';
+            } else if (upstream.status === 'success') {
+                resultDiv.style.color = 'var(--success-color)';
+            }
+            
             resultDiv.textContent = out;
         } else {
             resultDiv.style.color = 'var(--danger-color)';
-            let out = `❌ Connection Failed (${data.timeTakenMs || 0}ms)\n`;
-            out += `Error: ${data.error}\n`;
-            if (data.code) out += `Code: ${data.code}\n`;
-            resultDiv.textContent = out;
+            resultDiv.textContent = `❌ Diagnostics Failed\nError: ${data.error || 'Unknown error'}`;
         }
     } catch (err) {
         resultDiv.style.color = 'var(--danger-color)';
         resultDiv.textContent = '❌ Network Error: Failed to reach backend API.';
     } finally {
         btn.disabled = false;
-        btn.textContent = '⚡ Test Connection';
+        btn.textContent = '⚡ Run Diagnostics';
     }
 });
 

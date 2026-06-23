@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import crypto from 'crypto';
 import http from 'http';
 import https from 'https';
+import dns from 'dns/promises';
 import { readDb, writeDb } from '../db.js';
 import { authenticateToken, csrfProtection } from '../middlewares/auth.js';
 import { syncCaddyConfig } from '../services/caddy.js';
@@ -19,6 +20,23 @@ proxyRoutes.post('/test', authenticateToken, csrfProtection, async (c) => {
     return c.json({ success: false, error: 'Target is required' }, 400);
   }
 
+  const results = {
+    dns: { status: 'skipped', details: 'No domain provided', error: '' },
+    upstream: { status: 'skipped', details: '', error: '' },
+    public: { status: 'skipped', details: 'No domain provided', error: '' }
+  };
+
+  // --- Step 1: DNS Check ---
+  if (host) {
+    try {
+      const records = await dns.lookup(host);
+      results.dns = { status: 'success', details: `Resolved to ${records.address}`, error: '' };
+    } catch (err) {
+      results.dns = { status: 'error', error: err.code || err.message, details: 'DNS lookup failed' };
+    }
+  }
+
+  // --- Step 2: Upstream Check ---
   let targetUrl = String(target).trim();
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
     targetUrl = 'http://' + targetUrl;
@@ -31,7 +49,18 @@ proxyRoutes.post('/test', authenticateToken, csrfProtection, async (c) => {
     const options = {
       method: 'GET',
       timeout: 5000,
+      headers: {
+        'User-Agent': 'Caddy-UI-Test-Proxy/1.0'
+      }
     };
+
+    if (host) {
+      const cleanHost = String(host).trim().toLowerCase();
+      options.headers['Host'] = cleanHost;
+      options.headers['X-Forwarded-Host'] = cleanHost;
+      options.headers['X-Forwarded-Proto'] = 'https';
+      options.headers['X-Real-Ip'] = '127.0.0.1';
+    }
 
     if (isHttps) {
       if (tlsInsecure) {
@@ -45,56 +74,54 @@ proxyRoutes.post('/test', authenticateToken, csrfProtection, async (c) => {
     }
 
     const reqLib = isHttps ? https : http;
-    const startTime = Date.now();
-
-    return new Promise((resolve) => {
+    
+    results.upstream = await new Promise((resolve) => {
+      const startTime = Date.now();
       const req = reqLib.request(u, options, (res) => {
         const timeTaken = Date.now() - startTime;
-        let data = '';
-        
-        res.on('data', chunk => {
-          if (data.length < 1000) {
-            data += chunk;
-          }
-        });
-        
+        let snippet = '';
+        res.on('data', chunk => { if (snippet.length < 500) snippet += chunk; });
         res.on('end', () => {
-          resolve(c.json({
-            success: true,
-            status: res.statusCode,
-            headers: res.headers,
-            timeTakenMs: timeTaken,
-            snippet: data.substring(0, 500)
-          }));
+          resolve({
+            status: 'success',
+            details: `HTTP ${res.statusCode} (${timeTaken}ms)`,
+            error: '',
+            snippet: snippet.substring(0, 500)
+          });
         });
       });
-
-      req.on('error', (e) => {
-        const timeTaken = Date.now() - startTime;
-        resolve(c.json({
-          success: false,
-          error: e.message,
-          code: e.code,
-          timeTakenMs: timeTaken
-        }));
-      });
-
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(c.json({
-          success: false,
-          error: 'Connection timed out',
-          code: 'ETIMEDOUT',
-          timeTakenMs: 5000
-        }));
-      });
-
+      req.on('error', (e) => resolve({ status: 'error', error: e.code || e.message, details: 'Connection failed' }));
+      req.on('timeout', () => { req.destroy(); resolve({ status: 'error', error: 'ETIMEDOUT', details: '>5000ms' }); });
       req.end();
     });
-
   } catch (err) {
-    return c.json({ success: false, error: 'Invalid Target URL format', code: 'INVALID_URL' });
+    results.upstream = { status: 'error', error: err.message, details: 'Invalid target URL' };
   }
+
+  // --- Step 3: Public Domain Check ---
+  if (host) {
+    try {
+      const pubU = new URL(`https://${host}`);
+      results.public = await new Promise((resolve) => {
+        const startTime = Date.now();
+        const req = https.request(pubU, { method: 'GET', timeout: 5000 }, (res) => {
+          const timeTaken = Date.now() - startTime;
+          if (res.statusCode >= 200 && res.statusCode < 400) {
+            resolve({ status: 'success', details: `HTTP ${res.statusCode} (${timeTaken}ms)`, error: '' });
+          } else {
+            resolve({ status: 'error', error: `HTTP ${res.statusCode}`, details: `Public endpoint returned error (${timeTaken}ms)` });
+          }
+        });
+        req.on('error', (e) => resolve({ status: 'error', error: e.code || e.message, details: 'Connection failed' }));
+        req.on('timeout', () => { req.destroy(); resolve({ status: 'error', error: 'ETIMEDOUT', details: '>5000ms' }); });
+        req.end();
+      });
+    } catch (err) {
+      results.public = { status: 'error', error: err.message, details: 'Invalid host' };
+    }
+  }
+
+  return c.json({ success: true, results });
 });
 
 proxyRoutes.post('/', authenticateToken, csrfProtection, async (c) => {
