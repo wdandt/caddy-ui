@@ -1049,15 +1049,15 @@ document.getElementById('test-proxy-btn').addEventListener('click', async () => 
     resultDiv.textContent = 'Connecting to ' + target + '...';
 
     try {
-        const res = await fetch('/api/proxies/test', {
+        const res = await secureFetch('/api/proxies/test', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': localStorage.getItem('csrfToken')
-            },
-            body: JSON.stringify({ target, host, tlsInsecure })
+            silent: true,
+            body: { target, host, tlsInsecure }
         });
         
+        if (!res) {
+            throw new Error('Network or session error');
+        }
         const data = await res.json();
         
         if (data.success) {
