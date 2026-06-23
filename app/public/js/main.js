@@ -10,7 +10,8 @@ const tabs = [
     { navId: 'nav-servers', panelId: 'panel-servers', title: 'Caddy Servers' },
     { navId: 'nav-users', panelId: 'panel-users', title: 'User Accounts' },
     { navId: 'nav-providers', panelId: 'panel-providers', title: 'SSO Providers' },
-    { navId: 'nav-sso', panelId: 'panel-sso', title: 'Settings' }
+    { navId: 'nav-sso', panelId: 'panel-sso', title: 'Settings' },
+    { navId: 'nav-logs', panelId: 'panel-logs', title: 'Live Logs' }
 ];
 
 tabs.forEach(tab => {
@@ -30,6 +31,8 @@ tabs.forEach(tab => {
             loadUsersData();
         } else if (tab.navId === 'nav-providers') {
             loadProvidersData();
+        } else if (tab.navId === 'nav-logs') {
+            loadLogsData();
         } else {
             loadDashboardData();
         }
@@ -295,14 +298,24 @@ function updateWidgets() {
 }
 
 function renderServerSelectOptions() {
-    const select = document.getElementById('proxy-server-select');
-    select.replaceChildren(); // Clear
+    const proxySelect = document.getElementById('proxy-server-select');
+    const logsSelect = document.getElementById('logs-server-select');
+    
+    proxySelect.replaceChildren(); // Clear
+    if (logsSelect) logsSelect.replaceChildren();
 
     state.instances.forEach(inst => {
         const opt = document.createElement('option');
         opt.value = inst.id;
         opt.textContent = inst.name;
-        select.appendChild(opt);
+        proxySelect.appendChild(opt);
+        
+        if (logsSelect) {
+            const logsOpt = document.createElement('option');
+            logsOpt.value = inst.id;
+            logsOpt.textContent = inst.name;
+            logsSelect.appendChild(logsOpt);
+        }
     });
 }
 
@@ -345,6 +358,61 @@ async function fetchServerStatus() {
     } catch (err) {
         console.error('Error checking server status:', err);
     }
+}
+
+// --- Live Logs Fetching ---
+async function loadLogsData() {
+    const viewer = document.getElementById('logs-viewer');
+    const lines = document.getElementById('logs-lines-select').value;
+    const instanceId = document.getElementById('logs-server-select')?.value || '';
+    
+    viewer.textContent = 'Loading logs...';
+    
+    try {
+        const res = await secureFetch(`/api/logs?lines=${lines}&instanceId=${instanceId}`);
+        if (res && res.ok) {
+            const data = await res.json();
+            if (data.length === 0) {
+                viewer.textContent = 'No logs available yet. Make sure Caddy has processed at least one request.';
+                return;
+            }
+            // Format log lines beautifully
+            const formatted = data.map(log => {
+                if (log.raw) return log.raw;
+                const timestamp = new Date(log.ts * 1000).toLocaleString() || log.ts;
+                const level = log.level ? `[${log.level.toUpperCase()}]` : '';
+                const msg = log.msg || '';
+                let details = '';
+                if (log.request) {
+                    const req = log.request;
+                    details = `| ${req.remote_ip} | ${req.method} ${req.host}${req.uri}`;
+                }
+                if (log.error) {
+                    details += ` | ERROR: ${log.error}`;
+                }
+                return `${timestamp} ${level} ${msg} ${details}`;
+            });
+            viewer.textContent = formatted.join('\n');
+            // Scroll to bottom
+            viewer.scrollTop = viewer.scrollHeight;
+        } else if (res) {
+            const err = await res.json();
+            viewer.textContent = `Error: ${err.error}`;
+        }
+    } catch (err) {
+        viewer.textContent = 'Failed to fetch logs. Check console for details.';
+        console.error(err);
+    }
+}
+
+if (document.getElementById('refresh-logs-btn')) {
+    document.getElementById('refresh-logs-btn').addEventListener('click', loadLogsData);
+}
+if (document.getElementById('logs-lines-select')) {
+    document.getElementById('logs-lines-select').addEventListener('change', loadLogsData);
+}
+if (document.getElementById('logs-server-select')) {
+    document.getElementById('logs-server-select').addEventListener('change', loadLogsData);
 }
 
 // SSO Config is now fully handled in SSO Providers tab.

@@ -10,9 +10,15 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/logs
     environment:
       CADDY_ADMIN: ${CADDY_ADMIN:-127.0.0.1:2019}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     command:
       - sh
       - -c
@@ -29,6 +35,11 @@ services:
     restart: unless-stopped
     network_mode: host
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   caddy-ui:
     build:
@@ -39,6 +50,7 @@ services:
     network_mode: host
     volumes:
       - caddyui_data:/app/data
+      - caddy_logs:/app/logs
     environment:
       - PORT=3000
       - NODE_ENV=production
@@ -56,6 +68,11 @@ services:
       # SSO Configuration for Multi-domain
       - SSO_PORTAL_URL=${SSO_PORTAL_URL:-}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
@@ -66,3 +83,4 @@ volumes:
   caddy_data:
   caddy_config:
   caddyui_data:
+  caddy_logs:

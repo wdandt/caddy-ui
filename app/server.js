@@ -16,6 +16,7 @@ import userRoutes from './routes/api.users.js';
 import instanceRoutes from './routes/api.instances.js';
 import proxyRoutes from './routes/api.proxies.js';
 import oidcRoutes from './routes/api.oidc.js';
+import { logsRoutes } from './routes/api.logs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +47,7 @@ app.route('/api/instances', instanceRoutes);
 app.route('/api/proxies', proxyRoutes);
 app.route('/api/oidc-providers', oidcRoutes);
 app.route('/api/oidc', oidcRoutes);
+app.route('/', logsRoutes);
 
 // Serve static assets
 app.use('/*', serveStatic({ root: './public' }));

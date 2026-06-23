@@ -27,6 +27,7 @@
                 <li><a id="nav-users" class="nav-item"><span class="icon">👥</span> Users</a></li>
                 <li><a id="nav-providers" class="nav-item"><span class="icon">🔑</span> Identity Providers</a></li>
                 <li><a id="nav-sso" class="nav-item"><span class="icon">⚙️</span> Settings</a></li>
+                <li><a id="nav-logs" class="nav-item"><span class="icon">📜</span> Live Logs</a></li>
             </ul>
 
             <div class="user-info">
@@ -167,6 +168,27 @@
                 </div>
                 <div class="list-group" id="provider-list-container">
                     <!-- Dynamic OIDC provider rendering -->
+                </div>
+            </section>
+
+            <!-- PANEL: LIVE LOGS -->
+            <section id="panel-logs" class="content-section hidden">
+                <div class="section-header">
+                    <h3>Live Access Logs</h3>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <select id="logs-server-select" style="padding: 0.4rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: rgba(10,14,25,0.5); color: var(--text-primary);">
+                            <!-- Options populated via JS -->
+                        </select>
+                        <select id="logs-lines-select" style="padding: 0.4rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: rgba(10,14,25,0.5); color: var(--text-primary);">
+                            <option value="50">Last 50 lines</option>
+                            <option value="100" selected>Last 100 lines</option>
+                            <option value="500">Last 500 lines</option>
+                        </select>
+                        <button id="refresh-logs-btn" class="btn btn-secondary"><span class="icon">🔄</span> Refresh</button>
+                    </div>
+                </div>
+                <div class="glass" style="padding: 1rem; border-radius: var(--radius-md);">
+                    <pre id="logs-viewer" style="background: rgba(0,0,0,0.4); padding: 1rem; border-radius: var(--radius-sm); min-height: 400px; max-height: 600px; overflow: auto; font-family: monospace; font-size: 0.85rem; border: 1px solid var(--border-color); color: #a7f3d0; text-align: left; white-space: pre-wrap; word-break: break-all;">Loading logs...</pre>
                 </div>
             </section>
         </main>

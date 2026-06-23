@@ -41,6 +41,28 @@ export async function syncCaddyConfig(instance, proxies) {
     };
   }
 
+  // Enable access logging
+  caddyConfig.apps.http.servers.srv0.logs = {
+    default_logger_name: "log0"
+  };
+
+  if (!caddyConfig.logging) caddyConfig.logging = {};
+  if (!caddyConfig.logging.logs) caddyConfig.logging.logs = {};
+  caddyConfig.logging.logs.log0 = {
+    writer: {
+      output: "file",
+      filename: "/logs/access.log",
+      roll_size_mb: 10,
+      roll_keep: 5,
+      roll_keep_days: 7
+    },
+    encoder: {
+      format: "json"
+    },
+    level: "INFO"
+  };
+
+
   const instanceProxies = proxies.filter(p => p.instanceId === instance.id && p.enabled !== false);
 
   const routes = instanceProxies.map(proxy => {
@@ -87,7 +109,18 @@ export async function syncCaddyConfig(instance, proxies) {
             {
               dial: cleanDialTarget(proxy.target)
             }
-          ]
+          ],
+          flush_interval: -1,
+          stream_close_delay: "10m",
+          headers: {
+            request: {
+              set: {
+                "X-Forwarded-Host": ["{http.request.host}"],
+                "X-Forwarded-Port": ["{http.request.port}"],
+                "X-Real-Ip": ["{http.request.remote.host}"]
+              }
+            }
+          }
         }
       ]
     });
@@ -107,6 +140,29 @@ export async function syncCaddyConfig(instance, proxies) {
       terminal: true
     };
   });
+
+  const logRoute = {
+    match: [
+      {
+        path: ["/_caddyui/logs/access.log"],
+        header: {
+          "Authorization": [`Bearer ${JWT_SECRET}`]
+        }
+      }
+    ],
+    handle: [
+      {
+        handler: "rewrite",
+        uri: "/access.log"
+      },
+      {
+        handler: "file_server",
+        root: "/logs"
+      }
+    ]
+  };
+  
+  routes.unshift(logRoute);
 
   caddyConfig.apps.http.servers.srv0.routes = routes;
 
