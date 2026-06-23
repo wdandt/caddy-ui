@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Caddy UI Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
+    <script src="main.js?v=2" defer></script>
 </head>
 <body>
     <div class="background-decor">
@@ -196,7 +197,7 @@
 
     <!-- MODAL: ADD/EDIT PROXY ROUTE -->
     <div id="proxy-modal" class="modal-overlay">
-        <div class="modal-content glass">
+        <div class="modal-content glass flex-col">
             <div class="modal-header">
                 <h3 id="proxy-modal-title">Add Proxy Route</h3>
                 <button class="close-btn" id="close-proxy-modal">&times;</button>
@@ -301,7 +302,7 @@
 
     <!-- MODAL: ADD CADDY SERVER -->
     <div id="server-modal" class="modal-overlay">
-        <div class="modal-content glass">
+        <div class="modal-content glass flex-col">
             <div class="modal-header">
                 <h3 id="server-modal-title">Add Remote Caddy Server</h3>
                 <button class="close-btn" id="close-server-modal">&times;</button>
@@ -339,7 +340,7 @@
 
     <!-- MODAL: VIEW RAW CONFIG -->
     <div id="config-modal" class="modal-overlay">
-        <div class="modal-content glass" style="max-width: 700px;">
+        <div class="modal-content glass flex-col" style="max-width: 700px;">
             <div class="modal-header">
                 <h3 id="config-modal-title">Active JSON Config</h3>
                 <button class="close-btn" id="close-config-modal">&times;</button>
@@ -355,7 +356,7 @@
 
     <!-- MODAL: ADD/EDIT USER -->
     <div id="user-modal" class="modal-overlay">
-        <div class="modal-content glass">
+        <div class="modal-content glass flex-col">
             <div class="modal-header">
                 <h3 id="user-modal-title">Add User</h3>
                 <button class="close-btn" id="close-user-modal">&times;</button>
@@ -415,7 +416,7 @@
 
     <!-- MODAL: ADD/EDIT SSO PROVIDER -->
     <div id="provider-modal" class="modal-overlay">
-        <div class="modal-content glass">
+        <div class="modal-content glass flex-col">
             <div class="modal-header">
                 <h3 id="provider-modal-title">Add SSO Provider</h3>
                 <button class="close-btn" id="close-provider-modal">&times;</button>
@@ -466,7 +467,7 @@
 
     <!-- MODAL: MFA SETUP (QR CODE) -->
     <div id="mfa-modal" class="modal-overlay">
-        <div class="modal-content glass" style="max-width: 440px; text-align: center;">
+        <div class="modal-content glass flex-col" style="max-width: 440px; text-align: center;">
             <div class="modal-header">
                 <h3>Set Up Two-Factor Authentication</h3>
                 <button class="close-btn" id="close-mfa-modal">&times;</button>
