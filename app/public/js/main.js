@@ -417,6 +417,54 @@ if (document.getElementById('logs-server-select')) {
 
 // SSO Config is now fully handled in SSO Providers tab.
 
+// --- Advanced Routing Logic ---
+function renderAdvancedRoutes(routes = []) {
+    const container = document.getElementById('proxy-advanced-routes-container');
+    if (!container) return;
+    container.replaceChildren();
+    routes.forEach(route => addAdvancedRouteRow(route.path, route.target));
+}
+
+function addAdvancedRouteRow(path = '', target = '') {
+    const container = document.getElementById('proxy-advanced-routes-container');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.gap = '0.5rem';
+    row.style.alignItems = 'center';
+    row.className = 'advanced-route-row';
+    
+    const pathInput = document.createElement('input');
+    pathInput.type = 'text';
+    pathInput.className = 'adv-path';
+    pathInput.placeholder = 'Path (e.g. /app/*)';
+    pathInput.value = path;
+    pathInput.style.flex = '1';
+    
+    const targetInput = document.createElement('input');
+    targetInput.type = 'text';
+    targetInput.className = 'adv-target';
+    targetInput.placeholder = 'Target (e.g. http://ip:6001)';
+    targetInput.value = target;
+    targetInput.style.flex = '2';
+    
+    const rmBtn = document.createElement('button');
+    rmBtn.type = 'button';
+    rmBtn.className = 'btn btn-danger';
+    rmBtn.textContent = 'X';
+    rmBtn.style.padding = '0.3rem 0.6rem';
+    rmBtn.addEventListener('click', () => row.remove());
+    
+    row.appendChild(pathInput);
+    row.appendChild(targetInput);
+    row.appendChild(rmBtn);
+    container.appendChild(row);
+}
+
+if (document.getElementById('add-path-route-btn')) {
+    document.getElementById('add-path-route-btn').addEventListener('click', () => addAdvancedRouteRow());
+}
+
 // --- Proxy Route Management Actions ---
 function openEditProxyModal(proxy) {
     document.getElementById('proxy-modal-title').textContent = 'Edit Proxy Route';
@@ -425,6 +473,10 @@ function openEditProxyModal(proxy) {
     document.getElementById('proxy-host').value = proxy.host;
     document.getElementById('proxy-target').value = proxy.target;
     document.getElementById('proxy-enabled').checked = proxy.enabled !== false;
+    if (document.getElementById('proxy-tls-insecure')) {
+        document.getElementById('proxy-tls-insecure').checked = proxy.tlsInsecure === true;
+    }
+    renderAdvancedRoutes(proxy.advancedRoutes || []);
     
     let authMode = proxy.authMode;
     if (!authMode) {
@@ -461,6 +513,10 @@ function resetProxyModal() {
     document.getElementById('proxy-basic-group').classList.add('hidden');
     document.getElementById('proxy-json-text').value = '';
     document.getElementById('proxy-enabled').checked = true;
+    if (document.getElementById('proxy-tls-insecure')) {
+        document.getElementById('proxy-tls-insecure').checked = false;
+    }
+    renderAdvancedRoutes([]);
 }
 
 document.getElementById('proxy-form').addEventListener('submit', async (e) => {
@@ -504,6 +560,16 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
 
         const ssoEnabled = authMode === 'sso';
         const enabled = document.getElementById('proxy-enabled').checked;
+        const tlsInsecure = document.getElementById('proxy-tls-insecure') ? document.getElementById('proxy-tls-insecure').checked : false;
+        
+        const advancedRoutes = [];
+        document.querySelectorAll('.advanced-route-row').forEach(row => {
+            const path = row.querySelector('.adv-path').value.trim();
+            const target = row.querySelector('.adv-target').value.trim();
+            if (path && target) {
+                advancedRoutes.push({ path, target });
+            }
+        });
 
         payload = { 
             instanceId, 
@@ -513,7 +579,9 @@ document.getElementById('proxy-form').addEventListener('submit', async (e) => {
             authMode, 
             ssoProviderId, 
             basicAuthCredentials, 
-            enabled 
+            enabled,
+            tlsInsecure,
+            advancedRoutes
         };
     }
     

@@ -12,7 +12,7 @@ proxyRoutes.get('/', authenticateToken, (c) => {
 });
 
 proxyRoutes.post('/', authenticateToken, csrfProtection, async (c) => {
-  const { instanceId, host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials, enabled } = await c.req.json();
+  const { instanceId, host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials, enabled, tlsInsecure, advancedRoutes } = await c.req.json();
   if (!instanceId || !host || !target) {
     return c.json({ error: 'Instance ID, Host, and Target are required' }, 400);
   }
@@ -40,7 +40,9 @@ proxyRoutes.post('/', authenticateToken, csrfProtection, async (c) => {
     authMode: authMode || 'none',
     ssoProviderId: ssoProviderId || null,
     basicAuthCredentials: credentials,
-    enabled: enabled !== undefined ? Boolean(enabled) : true
+    enabled: enabled !== undefined ? Boolean(enabled) : true,
+    tlsInsecure: Boolean(tlsInsecure),
+    advancedRoutes: Array.isArray(advancedRoutes) ? advancedRoutes : []
   };
 
   db.proxies.push(newProxy);
@@ -56,7 +58,7 @@ proxyRoutes.post('/', authenticateToken, csrfProtection, async (c) => {
 
 proxyRoutes.put('/:id', authenticateToken, csrfProtection, async (c) => {
   const id = c.req.param('id');
-  const { host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials, enabled } = await c.req.json();
+  const { host, target, ssoEnabled, authMode, ssoProviderId, basicAuthCredentials, enabled, tlsInsecure, advancedRoutes } = await c.req.json();
   const db = readDb();
   const proxyIndex = db.proxies.findIndex(p => p.id === id);
 
@@ -85,7 +87,9 @@ proxyRoutes.put('/:id', authenticateToken, csrfProtection, async (c) => {
     authMode: authMode !== undefined ? authMode : currentProxy.authMode,
     ssoProviderId: ssoProviderId !== undefined ? ssoProviderId : currentProxy.ssoProviderId,
     basicAuthCredentials: credentials,
-    enabled: enabled !== undefined ? Boolean(enabled) : currentProxy.enabled
+    enabled: enabled !== undefined ? Boolean(enabled) : currentProxy.enabled,
+    tlsInsecure: tlsInsecure !== undefined ? Boolean(tlsInsecure) : currentProxy.tlsInsecure,
+    advancedRoutes: advancedRoutes !== undefined ? (Array.isArray(advancedRoutes) ? advancedRoutes : []) : (currentProxy.advancedRoutes || [])
   };
 
   db.proxies[proxyIndex] = updatedProxy;

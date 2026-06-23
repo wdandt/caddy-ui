@@ -101,28 +101,43 @@ export async function syncCaddyConfig(instance, proxies) {
       });
     }
 
-    innerRoutes.push({
-      handle: [
-        {
-          handler: "reverse_proxy",
-          upstreams: [
-            {
-              dial: cleanDialTarget(proxy.target)
-            }
-          ],
-          flush_interval: -1,
-          stream_close_delay: "10m",
-          headers: {
-            request: {
-              set: {
-                "X-Forwarded-Host": ["{http.request.host}"],
-                "X-Forwarded-Port": ["{http.request.port}"],
-                "X-Real-Ip": ["{http.request.remote.host}"]
-              }
+    const createReverseProxyHandler = (targetUrl) => {
+      const handler = {
+        handler: "reverse_proxy",
+        upstreams: [{ dial: cleanDialTarget(targetUrl) }],
+        flush_interval: -1,
+        stream_close_delay: "10m",
+        headers: {
+          request: {
+            set: {
+              "X-Forwarded-Host": ["{http.request.host}"],
+              "X-Forwarded-Port": ["{http.request.port}"],
+              "X-Real-Ip": ["{http.request.remote.host}"]
             }
           }
         }
-      ]
+      };
+
+      if (proxy.tlsInsecure && targetUrl.startsWith('https://')) {
+        handler.transport = {
+          protocol: "http",
+          tls: { insecure_skip_verify: true }
+        };
+      }
+      return handler;
+    };
+
+    if (proxy.advancedRoutes && proxy.advancedRoutes.length > 0) {
+      proxy.advancedRoutes.forEach(adv => {
+        innerRoutes.push({
+          match: [{ path: [adv.path] }],
+          handle: [createReverseProxyHandler(adv.target)]
+        });
+      });
+    }
+
+    innerRoutes.push({
+      handle: [createReverseProxyHandler(proxy.target)]
     });
 
     return {

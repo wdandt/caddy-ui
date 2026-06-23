@@ -227,8 +227,25 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="proxy-target">Destination Target (Internal)</label>
-                        <input type="text" id="proxy-target" placeholder="e.g. http://10.0.0.5:80 or http://app-container:3000">
+                        <label for="proxy-target">Destination Target (Internal / Default Catch-all)</label>
+                        <input type="text" id="proxy-target" placeholder="e.g. http://10.0.0.5:80 or https://coolify:443">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem;">
+                            <input type="checkbox" id="proxy-tls-insecure" style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;">
+                            <label for="proxy-tls-insecure" style="margin: 0; font-size: 0.85rem; font-weight: 500; cursor: pointer; user-select: none;">
+                                Bypass Upstream TLS Verification (Insecure Skip Verify)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="padding: 1rem; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background: rgba(0,0,0,0.2);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <label style="margin: 0; font-weight: 600;">Advanced Routing (Multi-Path)</label>
+                            <button type="button" id="add-path-route-btn" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">+ Add Path Route</button>
+                        </div>
+                        <div id="proxy-advanced-routes-container" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <!-- Dynamic advanced routes will be added here -->
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 0;">Use this to route specific paths (e.g. `/app/*`) to different targets (e.g. `http://10.0.0.5:6001`).</p>
                     </div>
 
                     <div class="form-group">
