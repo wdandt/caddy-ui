@@ -10,9 +10,11 @@ services:
       - caddy_data:/data
       - caddy_config:/config
       - caddy_logs:/logs
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
     environment:
       CADDY_ADMIN: ${CADDY_ADMIN:-127.0.0.1:2019}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      TLS_EMAIL: ${TLS_EMAIL}
     logging:
       driver: "json-file"
       options:
@@ -24,7 +26,8 @@ services:
       - |
         mkdir -p /config/caddy
         if [ ! -f /config/caddy/autosave.json ] || [ "$$(cat /config/caddy/autosave.json)" = "{}" ] || [ "$$(cat /config/caddy/autosave.json)" = "" ]; then
-          echo '{"admin":{"listen":"{env.CADDY_ADMIN}"}}' > /config/caddy/autosave.json
+          echo "Adapting initial Caddyfile..."
+          caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /config/caddy/autosave.json
         fi
         exec caddy run --config /config/caddy/autosave.json --resume --adapter json
   

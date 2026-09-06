@@ -1,0 +1,10 @@
+{
+	# Email dùng cho Let's Encrypt / ZeroSSL (để nhận thông báo hết hạn chứng chỉ)
+	email {$TLS_EMAIL:}
+	
+	# Cấu hình sử dụng Cloudflare DNS cho ACME challenge
+	acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	
+	# Cổng Admin API (UI sẽ giao tiếp qua cổng này)
+	admin {$CADDY_ADMIN:127.0.0.1:2019}
+}
