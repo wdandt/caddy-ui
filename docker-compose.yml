@@ -47,6 +47,23 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  cloudflare-ddns:
+    image: favonia/cloudflare-ddns:latest
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      DOMAINS: ${DDNS_DOMAINS:-}
+      IP6_PROVIDER: "none"
+      PROXIED: ${DDNS_PROXIED:-false}
+      UPDATE_CRON: "@every 5m"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   caddy_data:
   caddy_config:
