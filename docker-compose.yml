@@ -14,7 +14,6 @@ services:
     environment:
       CADDY_ADMIN: ${CADDY_ADMIN:-127.0.0.1:2019}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
-      TLS_EMAIL: ${TLS_EMAIL}
     logging:
       driver: "json-file"
       options:
@@ -26,8 +25,13 @@ services:
       - |
         mkdir -p /config/caddy
         if [ ! -f /config/caddy/autosave.json ] || [ "$$(cat /config/caddy/autosave.json)" = "{}" ] || [ "$$(cat /config/caddy/autosave.json)" = "" ]; then
-          echo "Adapting initial Caddyfile..."
-          caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /config/caddy/autosave.json
+          if [ -n "$$CLOUDFLARE_API_TOKEN" ]; then
+            echo "Adapting initial Caddyfile with Cloudflare DNS..."
+            caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /config/caddy/autosave.json
+          else
+            echo "CLOUDFLARE_API_TOKEN is empty, initializing default Caddy config..."
+            echo '{"admin":{"listen":"{env.CADDY_ADMIN}"}}' > /config/caddy/autosave.json
+          fi
         fi
         exec caddy run --config /config/caddy/autosave.json --resume --adapter json
   
